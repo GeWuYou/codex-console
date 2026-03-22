@@ -99,6 +99,7 @@ const elements = {
 // 初始化
 document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
+    handleModeChange({ target: elements.regMode });
     loadAvailableServices();
     loadRecentAccounts();
     startAccountsPolling();
