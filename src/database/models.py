@@ -152,6 +152,7 @@ class Sub2ApiService(Base):
     name = Column(String(100), nullable=False)  # 服务名称
     api_url = Column(String(500), nullable=False)  # API URL (host)
     api_key = Column(Text, nullable=False)  # x-api-key
+    default_remote_proxy_id = Column(Integer, nullable=True)  # 默认远端代理 ID
     enabled = Column(Boolean, default=True)
     priority = Column(Integer, default=0)  # 优先级
     created_at = Column(DateTime, default=datetime.utcnow)

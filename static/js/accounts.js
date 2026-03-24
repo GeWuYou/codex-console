@@ -1237,7 +1237,7 @@ async function handleBatchUploadSub2Api() {
     try {
         const payload = buildBatchPayload();
         if (choice.service_id != null) payload.service_id = choice.service_id;
-        if (proxyInput.proxy_id != null) payload.proxy_id = proxyInput.proxy_id;
+        payload.proxy_id = proxyInput.proxy_id;
         const result = await api.post('/accounts/batch-upload-sub2api', payload);
 
         let message = `成功: ${result.success_count}`;
@@ -1267,7 +1267,7 @@ async function uploadToSub2Api(id) {
         toast.info('正在上传到 Sub2API...');
         const payload = {};
         if (choice.service_id != null) payload.service_id = choice.service_id;
-        if (proxyInput.proxy_id != null) payload.proxy_id = proxyInput.proxy_id;
+        payload.proxy_id = proxyInput.proxy_id;
         const result = await api.post(`/accounts/${id}/upload-sub2api`, payload);
         if (result.success) {
             toast.success('上传成功');

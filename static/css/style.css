@@ -357,6 +357,27 @@ body {
     border-top: 1px solid var(--border-light);
 }
 
+.sub2api-remote-proxy-row {
+    display: flex;
+    align-items: stretch;
+    gap: var(--spacing-sm);
+}
+
+.sub2api-remote-proxy-select {
+    flex: 1;
+}
+
+.sub2api-remote-proxy-btn {
+    flex-shrink: 0;
+}
+
+.sub2api-remote-proxy-hint {
+    margin-top: var(--spacing-xs);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
 /* Checkbox 样式优化 */
 .form-group input[type="checkbox"] {
     width: auto;

@@ -596,13 +596,15 @@ def create_sub2api_service(
     api_url: str,
     api_key: str,
     enabled: bool = True,
-    priority: int = 0
+    priority: int = 0,
+    default_remote_proxy_id: Optional[int] = None,
 ) -> Sub2ApiService:
     """创建 Sub2API 服务配置"""
     svc = Sub2ApiService(
         name=name,
         api_url=api_url,
         api_key=api_key,
+        default_remote_proxy_id=default_remote_proxy_id,
         enabled=enabled,
         priority=priority,
     )

@@ -111,6 +111,7 @@ class DatabaseSessionManager:
             ("accounts", "subscription_at", "DATETIME"),
             ("accounts", "cookies", "TEXT"),
             ("proxies", "is_default", "BOOLEAN DEFAULT 0"),
+            ("sub2api_services", "default_remote_proxy_id", "INTEGER"),
         ]
 
         # 确保新表存在（create_tables 已处理，此处兜底）

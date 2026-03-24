@@ -23,6 +23,7 @@ class Sub2ApiServiceCreate(BaseModel):
     name: str
     api_url: str
     api_key: str
+    default_remote_proxy_id: Optional[int] = None
     enabled: bool = True
     priority: int = 0
 
@@ -31,6 +32,7 @@ class Sub2ApiServiceUpdate(BaseModel):
     name: Optional[str] = None
     api_url: Optional[str] = None
     api_key: Optional[str] = None
+    default_remote_proxy_id: Optional[int] = None
     enabled: Optional[bool] = None
     priority: Optional[int] = None
 
@@ -40,6 +42,7 @@ class Sub2ApiServiceResponse(BaseModel):
     name: str
     api_url: str
     has_key: bool
+    default_remote_proxy_id: Optional[int] = None
     enabled: bool
     priority: int
     created_at: Optional[str] = None
@@ -50,8 +53,10 @@ class Sub2ApiServiceResponse(BaseModel):
 
 
 class Sub2ApiTestRequest(BaseModel):
+    service_id: Optional[int] = None
     api_url: Optional[str] = None
     api_key: Optional[str] = None
+    default_remote_proxy_id: Optional[int] = None
 
 
 class Sub2ApiUploadRequest(BaseModel):
@@ -83,6 +88,7 @@ def _to_response(svc) -> Sub2ApiServiceResponse:
         name=svc.name,
         api_url=svc.api_url,
         has_key=bool(svc.api_key),
+        default_remote_proxy_id=svc.default_remote_proxy_id,
         enabled=svc.enabled,
         priority=svc.priority,
         created_at=svc.created_at.isoformat() if svc.created_at else None,
@@ -119,6 +125,23 @@ def _to_remote_proxy_response(proxy: dict) -> Sub2ApiRemoteProxyResponse:
     )
 
 
+def _resolve_temp_sub2api_request(request: Sub2ApiTestRequest):
+    svc = None
+    if request.service_id is not None:
+        with get_db() as db:
+            svc = crud.get_sub2api_service_by_id(db, request.service_id)
+        if not svc:
+            raise HTTPException(status_code=404, detail="Sub2API 服务不存在")
+
+    api_url = (request.api_url or (svc.api_url if svc else "")).strip()
+    api_key = (request.api_key or (svc.api_key if svc else "")).strip()
+
+    if not api_url or not api_key:
+        raise HTTPException(status_code=400, detail="api_url 和 api_key 不能为空")
+
+    return svc, api_url, api_key
+
+
 # ============== API Endpoints ==============
 
 @router.get("", response_model=List[Sub2ApiServiceResponse])
@@ -140,6 +163,7 @@ async def create_sub2api_service(request: Sub2ApiServiceCreate):
             api_key=request.api_key,
             enabled=request.enabled,
             priority=request.priority,
+            default_remote_proxy_id=request.default_remote_proxy_id,
         )
         return _to_response(svc)
 
@@ -157,6 +181,33 @@ async def list_remote_sub2api_proxies(service_id: Optional[int] = None):
 
     return Sub2ApiRemoteProxyListResponse(
         service=_to_response(svc),
+        proxies=proxy_items,
+    )
+
+
+@router.post("/remote-proxies", response_model=Sub2ApiRemoteProxyListResponse)
+async def list_remote_sub2api_proxies_direct(request: Sub2ApiTestRequest):
+    """按临时 Sub2API 配置拉取远端代理列表（用于新增前选择默认代理）"""
+    svc, api_url, api_key = _resolve_temp_sub2api_request(request)
+
+    try:
+        proxies = fetch_remote_sub2api_proxies(api_url, api_key)
+        proxy_items = [_to_remote_proxy_response(proxy) for proxy in proxies]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    return Sub2ApiRemoteProxyListResponse(
+        service=_to_response(svc) if svc else Sub2ApiServiceResponse(
+            id=0,
+            name="未保存服务",
+            api_url=api_url,
+            has_key=bool(api_key),
+            default_remote_proxy_id=request.default_remote_proxy_id,
+            enabled=True,
+            priority=0,
+            created_at=None,
+            updated_at=None,
+        ),
         proxies=proxy_items,
     )
 
@@ -183,6 +234,7 @@ async def get_sub2api_service_full(service_id: int):
             "name": svc.name,
             "api_url": svc.api_url,
             "api_key": svc.api_key,
+            "default_remote_proxy_id": svc.default_remote_proxy_id,
             "enabled": svc.enabled,
             "priority": svc.priority,
         }
@@ -204,6 +256,8 @@ async def update_sub2api_service(service_id: int, request: Sub2ApiServiceUpdate)
         # api_key 留空则保持原值
         if request.api_key:
             update_data["api_key"] = request.api_key
+        if "default_remote_proxy_id" in request.model_fields_set:
+            update_data["default_remote_proxy_id"] = request.default_remote_proxy_id
         if request.enabled is not None:
             update_data["enabled"] = request.enabled
         if request.priority is not None:
@@ -238,9 +292,8 @@ async def test_sub2api_service(service_id: int):
 @router.post("/test-connection")
 async def test_sub2api_connection_direct(request: Sub2ApiTestRequest):
     """直接测试 Sub2API 连接（用于添加前验证）"""
-    if not request.api_url or not request.api_key:
-        raise HTTPException(status_code=400, detail="api_url 和 api_key 不能为空")
-    success, message = test_sub2api_connection(request.api_url, request.api_key)
+    _svc, api_url, api_key = _resolve_temp_sub2api_request(request)
+    success, message = test_sub2api_connection(api_url, api_key)
     return {"success": success, "message": message}
 
 
@@ -263,12 +316,14 @@ async def upload_accounts_to_sub2api(request: Sub2ApiUploadRequest):
         api_url = svc.api_url
         api_key = svc.api_key
 
+    selected_proxy_id = request.proxy_id if "proxy_id" in request.model_fields_set else svc.default_remote_proxy_id
+
     results = batch_upload_to_sub2api(
         request.account_ids,
         api_url,
         api_key,
         concurrency=request.concurrency,
         priority=request.priority,
-        proxy_id=request.proxy_id,
+        proxy_id=selected_proxy_id,
     )
     return results

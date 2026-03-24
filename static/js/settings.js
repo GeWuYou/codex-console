@@ -57,6 +57,7 @@ const elements = {
     sub2ApiServiceForm: document.getElementById('sub2api-service-form'),
     sub2ApiServiceModalTitle: document.getElementById('sub2api-service-modal-title'),
     testSub2ApiServiceBtn: document.getElementById('test-sub2api-service-btn'),
+    loadSub2ApiRemoteProxiesBtn: document.getElementById('load-sub2api-remote-proxies-btn'),
     // Team Manager 服务管理
     addTmServiceBtn: document.getElementById('add-tm-service-btn'),
     tmServicesTable: document.getElementById('tm-services-table'),
@@ -311,6 +312,9 @@ function initEventListeners() {
     }
     if (elements.testSub2ApiServiceBtn) {
         elements.testSub2ApiServiceBtn.addEventListener('click', handleTestSub2ApiService);
+    }
+    if (elements.loadSub2ApiRemoteProxiesBtn) {
+        elements.loadSub2ApiRemoteProxiesBtn.addEventListener('click', () => loadSub2ApiRemoteProxiesForForm());
     }
 }
 
@@ -1379,6 +1383,101 @@ async function handleTestCpaService() {
 
 let _sub2apiEditingId = null;
 
+function getSub2ApiDefaultRemoteProxySelect() {
+    return document.getElementById('sub2api-default-remote-proxy-id');
+}
+
+function resetSub2ApiRemoteProxyOptions(selectedValue = '', firstOptionText = '不设置默认代理') {
+    const select = getSub2ApiDefaultRemoteProxySelect();
+    if (!select) return;
+
+    const normalizedValue = selectedValue == null ? '' : String(selectedValue);
+    const options = [`<option value="">${escapeHtml(firstOptionText)}</option>`];
+    if (normalizedValue) {
+        options.push(`<option value="${escapeHtml(normalizedValue)}">当前默认代理 #${escapeHtml(normalizedValue)}（点击加载详情）</option>`);
+    }
+
+    select.innerHTML = options.join('');
+    select.value = normalizedValue;
+}
+
+function renderSub2ApiRemoteProxyOptions(proxies, selectedValue = '') {
+    const select = getSub2ApiDefaultRemoteProxySelect();
+    if (!select) return;
+
+    const normalizedValue = selectedValue == null ? '' : String(selectedValue);
+    const hasSelectedProxy = normalizedValue !== '' && proxies.some(proxy => String(proxy.id) === normalizedValue);
+    const options = [
+        `<option value="">${escapeHtml(proxies.length === 0 ? '不设置默认代理（当前暂无远端代理）' : '不设置默认代理')}</option>`
+    ];
+
+    if (normalizedValue && !hasSelectedProxy) {
+        options.push(`<option value="${escapeHtml(normalizedValue)}">当前默认代理 #${escapeHtml(normalizedValue)}（远端已不存在）</option>`);
+    }
+
+    options.push(...proxies.map(proxy => {
+        const protocol = String(proxy.protocol || '').trim().toUpperCase();
+        const host = String(proxy.host || '').trim();
+        const port = proxy.port != null ? `:${proxy.port}` : '';
+        const location = host ? ` - ${host}${port}` : '';
+        const status = String(proxy.status || '').trim() || 'inactive';
+        const label = `#${proxy.id} ${proxy.name || `Proxy ${proxy.id}`}${protocol ? ` (${protocol})` : ''}${location} [${status}]`;
+        return `<option value="${proxy.id}">${escapeHtml(label)}</option>`;
+    }));
+
+    select.innerHTML = options.join('');
+    select.value = normalizedValue;
+}
+
+function setSub2ApiRemoteProxyLoading(loading) {
+    if (!elements.loadSub2ApiRemoteProxiesBtn) return;
+    elements.loadSub2ApiRemoteProxiesBtn.disabled = loading;
+    elements.loadSub2ApiRemoteProxiesBtn.textContent = loading ? '加载中...' : '加载代理';
+}
+
+async function loadSub2ApiRemoteProxiesForForm({ silent = false } = {}) {
+    const id = document.getElementById('sub2api-service-id').value.trim();
+    const apiUrl = document.getElementById('sub2api-service-url').value.trim();
+    const apiKey = document.getElementById('sub2api-service-key').value.trim();
+    const select = getSub2ApiDefaultRemoteProxySelect();
+    const selectedValue = select ? select.value : '';
+
+    if (!apiUrl) {
+        if (!silent) toast.error('请先填写 API URL');
+        return;
+    }
+    if (!id && !apiKey) {
+        if (!silent) toast.error('请先填写 API Key');
+        return;
+    }
+
+    const payload = { api_url: apiUrl };
+    if (id) payload.service_id = parseInt(id, 10);
+    if (apiKey) payload.api_key = apiKey;
+
+    setSub2ApiRemoteProxyLoading(true);
+    try {
+        const result = await api.post('/sub2api-services/remote-proxies', payload);
+        const proxies = result.proxies || [];
+        renderSub2ApiRemoteProxyOptions(proxies, selectedValue);
+        if (!silent) {
+            if (proxies.length > 0) {
+                toast.success(`已加载 ${proxies.length} 个远端代理`);
+            } else {
+                toast.info('当前服务下暂无可选远端代理');
+            }
+        }
+    } catch (e) {
+        if (!silent) {
+            toast.error('加载远端代理失败: ' + e.message);
+        } else {
+            console.error('加载远端代理失败:', e);
+        }
+    } finally {
+        setSub2ApiRemoteProxyLoading(false);
+    }
+}
+
 async function loadSub2ApiServices() {
     try {
         const services = await api.get('/sub2api-services');
@@ -1416,19 +1515,31 @@ function openSub2ApiServiceModal(svc = null) {
     elements.sub2ApiServiceModalTitle.textContent = svc ? '编辑 Sub2API 服务' : '添加 Sub2API 服务';
     elements.sub2ApiServiceForm.reset();
     document.getElementById('sub2api-service-id').value = svc ? svc.id : '';
+
+    resetSub2ApiRemoteProxyOptions(svc ? svc.default_remote_proxy_id : '');
+
     if (svc) {
         document.getElementById('sub2api-service-name').value = svc.name || '';
         document.getElementById('sub2api-service-url').value = svc.api_url || '';
         document.getElementById('sub2api-service-priority').value = svc.priority ?? 0;
         document.getElementById('sub2api-service-enabled').checked = svc.enabled !== false;
         document.getElementById('sub2api-service-key').placeholder = svc.has_key ? '已配置，留空保持不变' : '请输入 API Key';
+    } else {
+        document.getElementById('sub2api-service-key').placeholder = '请输入 API Key';
     }
+
     elements.sub2ApiServiceEditModal.classList.add('active');
+
+    if (svc) {
+        loadSub2ApiRemoteProxiesForForm({ silent: true });
+    }
 }
 
 function closeSub2ApiServiceModal() {
     elements.sub2ApiServiceEditModal.classList.remove('active');
     elements.sub2ApiServiceForm.reset();
+    resetSub2ApiRemoteProxyOptions();
+    setSub2ApiRemoteProxyLoading(false);
     _sub2apiEditingId = null;
 }
 
@@ -1455,10 +1566,13 @@ async function deleteSub2ApiService(id, name) {
 async function handleSaveSub2ApiService(e) {
     e.preventDefault();
     const id = document.getElementById('sub2api-service-id').value;
+    const defaultRemoteProxyValue = getSub2ApiDefaultRemoteProxySelect()?.value || '';
+    const parsedDefaultRemoteProxyId = defaultRemoteProxyValue === '' ? null : parseInt(defaultRemoteProxyValue, 10);
     const data = {
         name: document.getElementById('sub2api-service-name').value,
         api_url: document.getElementById('sub2api-service-url').value,
         api_key: document.getElementById('sub2api-service-key').value || undefined,
+        default_remote_proxy_id: Number.isNaN(parsedDefaultRemoteProxyId) ? null : parsedDefaultRemoteProxyId,
         priority: parseInt(document.getElementById('sub2api-service-priority').value) || 0,
         enabled: document.getElementById('sub2api-service-enabled').checked,
     };
@@ -1499,7 +1613,7 @@ async function testSub2ApiServiceById(id) {
 async function handleTestSub2ApiService() {
     const apiUrl = document.getElementById('sub2api-service-url').value.trim();
     const apiKey = document.getElementById('sub2api-service-key').value.trim();
-    const id = document.getElementById('sub2api-service-id').value;
+    const id = document.getElementById('sub2api-service-id').value.trim();
 
     if (!apiUrl) {
         toast.error('请先填写 API URL');
@@ -1514,12 +1628,11 @@ async function handleTestSub2ApiService() {
     elements.testSub2ApiServiceBtn.textContent = '测试中...';
 
     try {
-        let result;
-        if (id && !apiKey) {
-            result = await api.post(`/sub2api-services/${id}/test`);
-        } else {
-            result = await api.post('/sub2api-services/test-connection', { api_url: apiUrl, api_key: apiKey });
-        }
+        const payload = { api_url: apiUrl };
+        if (id) payload.service_id = parseInt(id, 10);
+        if (apiKey) payload.api_key = apiKey;
+
+        const result = await api.post('/sub2api-services/test-connection', payload);
         if (result.success) {
             toast.success(result.message);
         } else {

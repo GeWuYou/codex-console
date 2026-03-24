@@ -462,7 +462,12 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                                     if not _svc:
                                         continue
                                     log_callback(f"[Sub2API] 正在把账号发往服务站: {_svc.name}")
-                                    _ok, _msg = upload_to_sub2api([saved_account], _svc.api_url, _svc.api_key)
+                                    _ok, _msg = upload_to_sub2api(
+                                        [saved_account],
+                                        _svc.api_url,
+                                        _svc.api_key,
+                                        proxy_id=_svc.default_remote_proxy_id,
+                                    )
                                     log_callback(f"[Sub2API] {'成功' if _ok else '失败'}({_svc.name}): {_msg}")
                                 except Exception as _e:
                                     log_callback(f"[Sub2API] 异常({_sid}): {_e}")
