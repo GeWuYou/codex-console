@@ -2,11 +2,9 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "master", "main" ]
     # 当发布新版本时触发
     tags: [ 'v*.*.*' ]
-  pull_request:
-    branches: [ "master", "main" ]
+  workflow_dispatch:
 
 env:
   # GitHub Container Registry 的地址
