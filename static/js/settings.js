@@ -58,6 +58,9 @@ const elements = {
     sub2ApiServiceModalTitle: document.getElementById('sub2api-service-modal-title'),
     testSub2ApiServiceBtn: document.getElementById('test-sub2api-service-btn'),
     loadSub2ApiRemoteProxiesBtn: document.getElementById('load-sub2api-remote-proxies-btn'),
+    sub2ApiRemoteProxyTrigger: document.getElementById('sub2api-remote-proxy-trigger'),
+    sub2ApiRemoteProxyDropdown: document.getElementById('sub2api-remote-proxy-dropdown'),
+    sub2ApiRemoteProxyOptions: document.getElementById('sub2api-remote-proxy-options'),
     // Team Manager 服务管理
     addTmServiceBtn: document.getElementById('add-tm-service-btn'),
     tmServicesTable: document.getElementById('tm-services-table'),
@@ -91,8 +94,11 @@ document.addEventListener('DOMContentLoaded', () => {
     initEventListeners();
 });
 
-document.addEventListener('click', () => {
+document.addEventListener('click', (e) => {
     document.querySelectorAll('.dropdown-menu.active').forEach(m => m.classList.remove('active'));
+    if (!e.target.closest('.sub2api-remote-proxy-picker')) {
+        closeSub2ApiRemoteProxyDropdown();
+    }
 });
 
 // 初始化标签页
@@ -315,6 +321,23 @@ function initEventListeners() {
     }
     if (elements.loadSub2ApiRemoteProxiesBtn) {
         elements.loadSub2ApiRemoteProxiesBtn.addEventListener('click', () => loadSub2ApiRemoteProxiesForForm());
+    }
+    if (elements.sub2ApiRemoteProxyTrigger) {
+        elements.sub2ApiRemoteProxyTrigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const opened = toggleSub2ApiRemoteProxyDropdown();
+            if (opened) {
+                loadSub2ApiRemoteProxiesForForm({ silent: true });
+            }
+        });
+    }
+    if (elements.sub2ApiRemoteProxyOptions) {
+        elements.sub2ApiRemoteProxyOptions.addEventListener('click', (e) => {
+            const optionBtn = e.target.closest('.sub2api-remote-proxy-option');
+            if (!optionBtn) return;
+            setSub2ApiDefaultRemoteProxyValue(optionBtn.dataset.proxyValue || '');
+            closeSub2ApiRemoteProxyDropdown();
+        });
     }
 }
 
@@ -1382,51 +1405,193 @@ async function handleTestCpaService() {
 // ============================================================================
 
 let _sub2apiEditingId = null;
+let _sub2apiRemoteProxyOptions = [];
 
-function getSub2ApiDefaultRemoteProxySelect() {
+function normalizeSub2ApiRemoteProxyValue(value) {
+    return value == null || value === '' ? '' : String(value);
+}
+
+function getSub2ApiDefaultRemoteProxyInput() {
     return document.getElementById('sub2api-default-remote-proxy-id');
 }
 
-function resetSub2ApiRemoteProxyOptions(selectedValue = '', firstOptionText = '不设置默认代理') {
-    const select = getSub2ApiDefaultRemoteProxySelect();
-    if (!select) return;
+function getSub2ApiRemoteProxyTriggerContent() {
+    return document.getElementById('sub2api-remote-proxy-trigger-content');
+}
 
-    const normalizedValue = selectedValue == null ? '' : String(selectedValue);
-    const options = [`<option value="">${escapeHtml(firstOptionText)}</option>`];
-    if (normalizedValue) {
-        options.push(`<option value="${escapeHtml(normalizedValue)}">当前默认代理 #${escapeHtml(normalizedValue)}（点击加载详情）</option>`);
+function getSub2ApiRemoteProxyOptionByValue(value) {
+    const normalizedValue = normalizeSub2ApiRemoteProxyValue(value);
+    return _sub2apiRemoteProxyOptions.find(option => option.value === normalizedValue) || null;
+}
+
+function getSub2ApiRemoteProxyStatusClass(status) {
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    if (normalizedStatus === 'active') return 'active';
+    if ([ 'inactive', 'disabled', 'offline' ].includes(normalizedStatus)) return 'disabled';
+    if ([ 'error', 'failed' ].includes(normalizedStatus)) return 'error';
+    if ([ 'warning', 'missing' ].includes(normalizedStatus)) return 'warning';
+    return 'pending';
+}
+
+function buildSub2ApiRemoteProxySummary(option) {
+    if (!option || option.value === '') {
+        return '<span class="sub2api-remote-proxy-placeholder">不设置默认代理</span>';
     }
 
-    select.innerHTML = options.join('');
-    select.value = normalizedValue;
+    const protocol = option.protocol
+        ? `<span class="sub2api-remote-proxy-pill">${escapeHtml(option.protocol)}</span>`
+        : '';
+    const status = option.status
+        ? `<span class="status-badge ${getSub2ApiRemoteProxyStatusClass(option.status)}">${escapeHtml(option.status)}</span>`
+        : '';
+    const meta = option.meta
+        ? `<div class="sub2api-remote-proxy-summary-meta">${escapeHtml(option.meta)}</div>`
+        : '';
+
+    return `
+        <div class="sub2api-remote-proxy-summary-title-row">
+            <span class="sub2api-remote-proxy-summary-name">${escapeHtml(option.title)}</span>
+            ${protocol}
+            ${status}
+        </div>
+        ${meta}
+    `;
+}
+
+function buildSub2ApiRemoteProxyOptionMarkup(option, selectedValue) {
+    const isSelected = option.value === selectedValue;
+    const protocol = option.protocol
+        ? `<span class="sub2api-remote-proxy-pill">${escapeHtml(option.protocol)}</span>`
+        : '';
+    const status = option.status
+        ? `<span class="status-badge ${getSub2ApiRemoteProxyStatusClass(option.status)}">${escapeHtml(option.status)}</span>`
+        : '';
+    const meta = option.meta
+        ? `<div class="sub2api-remote-proxy-option-meta">${escapeHtml(option.meta)}</div>`
+        : '';
+
+    return `
+        <button type="button" class="sub2api-remote-proxy-option${isSelected ? ' selected' : ''}" data-proxy-value="${escapeHtml(option.value)}">
+            <div class="sub2api-remote-proxy-option-main">
+                <div class="sub2api-remote-proxy-option-title-row">
+                    <span class="sub2api-remote-proxy-option-name">${escapeHtml(option.title)}</span>
+                    ${protocol}
+                    ${status}
+                </div>
+                ${meta}
+            </div>
+            <span class="sub2api-remote-proxy-option-check">${isSelected ? '已选' : '选择'}</span>
+        </button>
+    `;
+}
+
+function renderSub2ApiRemoteProxyTriggerDisplay() {
+    const triggerContent = getSub2ApiRemoteProxyTriggerContent();
+    const input = getSub2ApiDefaultRemoteProxyInput();
+    if (!triggerContent || !input) return;
+
+    const option = getSub2ApiRemoteProxyOptionByValue(input.value);
+    triggerContent.innerHTML = buildSub2ApiRemoteProxySummary(option);
+}
+
+function renderSub2ApiRemoteProxyOptionList() {
+    if (!elements.sub2ApiRemoteProxyOptions) return;
+    const selectedValue = normalizeSub2ApiRemoteProxyValue(getSub2ApiDefaultRemoteProxyInput()?.value);
+    elements.sub2ApiRemoteProxyOptions.innerHTML = _sub2apiRemoteProxyOptions
+        .map(option => buildSub2ApiRemoteProxyOptionMarkup(option, selectedValue))
+        .join('');
+}
+
+function setSub2ApiDefaultRemoteProxyValue(value) {
+    const input = getSub2ApiDefaultRemoteProxyInput();
+    if (!input) return;
+    input.value = normalizeSub2ApiRemoteProxyValue(value);
+    renderSub2ApiRemoteProxyTriggerDisplay();
+    renderSub2ApiRemoteProxyOptionList();
+}
+
+function closeSub2ApiRemoteProxyDropdown() {
+    if (elements.sub2ApiRemoteProxyDropdown) {
+        elements.sub2ApiRemoteProxyDropdown.classList.remove('active');
+    }
+    if (elements.sub2ApiRemoteProxyTrigger) {
+        elements.sub2ApiRemoteProxyTrigger.setAttribute('aria-expanded', 'false');
+    }
+}
+
+function toggleSub2ApiRemoteProxyDropdown() {
+    if (!elements.sub2ApiRemoteProxyDropdown || !elements.sub2ApiRemoteProxyTrigger) return false;
+    const willOpen = !elements.sub2ApiRemoteProxyDropdown.classList.contains('active');
+    elements.sub2ApiRemoteProxyDropdown.classList.toggle('active', willOpen);
+    elements.sub2ApiRemoteProxyTrigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    return willOpen;
+}
+
+function resetSub2ApiRemoteProxyOptions(selectedValue = '') {
+    const normalizedValue = normalizeSub2ApiRemoteProxyValue(selectedValue);
+    _sub2apiRemoteProxyOptions = [
+        {
+            value: '',
+            title: '不设置默认代理',
+            meta: '上传时不默认绑定远端代理',
+            protocol: '',
+            status: '',
+        },
+    ];
+
+    if (normalizedValue) {
+        _sub2apiRemoteProxyOptions.push({
+            value: normalizedValue,
+            title: `当前默认代理 #${normalizedValue}`,
+            meta: '点击“加载代理”获取远端详情',
+            protocol: '',
+            status: 'warning',
+        });
+    }
+
+    setSub2ApiDefaultRemoteProxyValue(normalizedValue);
+    closeSub2ApiRemoteProxyDropdown();
 }
 
 function renderSub2ApiRemoteProxyOptions(proxies, selectedValue = '') {
-    const select = getSub2ApiDefaultRemoteProxySelect();
-    if (!select) return;
-
-    const normalizedValue = selectedValue == null ? '' : String(selectedValue);
-    const hasSelectedProxy = normalizedValue !== '' && proxies.some(proxy => String(proxy.id) === normalizedValue);
-    const options = [
-        `<option value="">${escapeHtml(proxies.length === 0 ? '不设置默认代理（当前暂无远端代理）' : '不设置默认代理')}</option>`
-    ];
-
-    if (normalizedValue && !hasSelectedProxy) {
-        options.push(`<option value="${escapeHtml(normalizedValue)}">当前默认代理 #${escapeHtml(normalizedValue)}（远端已不存在）</option>`);
-    }
-
-    options.push(...proxies.map(proxy => {
+    const normalizedValue = normalizeSub2ApiRemoteProxyValue(selectedValue);
+    const remoteProxyOptions = (proxies || []).map(proxy => {
         const protocol = String(proxy.protocol || '').trim().toUpperCase();
         const host = String(proxy.host || '').trim();
         const port = proxy.port != null ? `:${proxy.port}` : '';
-        const location = host ? ` - ${host}${port}` : '';
+        const meta = host ? `${host}${port}` : '未提供地址';
         const status = String(proxy.status || '').trim() || 'inactive';
-        const label = `#${proxy.id} ${proxy.name || `Proxy ${proxy.id}`}${protocol ? ` (${protocol})` : ''}${location} [${status}]`;
-        return `<option value="${proxy.id}">${escapeHtml(label)}</option>`;
-    }));
+        return {
+            value: String(proxy.id),
+            title: `#${proxy.id} ${proxy.name || `Proxy ${proxy.id}`}`,
+            meta,
+            protocol,
+            status,
+        };
+    });
 
-    select.innerHTML = options.join('');
-    select.value = normalizedValue;
+    _sub2apiRemoteProxyOptions = [
+        {
+            value: '',
+            title: '不设置默认代理',
+            meta: remoteProxyOptions.length === 0 ? '当前服务下暂无可选远端代理' : '上传时不默认绑定远端代理',
+            protocol: '',
+            status: '',
+        },
+    ];
+
+    if (normalizedValue && !remoteProxyOptions.some(option => option.value === normalizedValue)) {
+        _sub2apiRemoteProxyOptions.push({
+            value: normalizedValue,
+            title: `当前默认代理 #${normalizedValue}`,
+            meta: '远端已不存在，请重新选择或清空默认代理',
+            protocol: '',
+            status: 'warning',
+        });
+    }
+
+    _sub2apiRemoteProxyOptions.push(...remoteProxyOptions);
+    setSub2ApiDefaultRemoteProxyValue(normalizedValue);
 }
 
 function setSub2ApiRemoteProxyLoading(loading) {
@@ -1439,8 +1604,8 @@ async function loadSub2ApiRemoteProxiesForForm({ silent = false } = {}) {
     const id = document.getElementById('sub2api-service-id').value.trim();
     const apiUrl = document.getElementById('sub2api-service-url').value.trim();
     const apiKey = document.getElementById('sub2api-service-key').value.trim();
-    const select = getSub2ApiDefaultRemoteProxySelect();
-    const selectedValue = select ? select.value : '';
+    const input = getSub2ApiDefaultRemoteProxyInput();
+    const selectedValue = input ? input.value : '';
 
     if (!apiUrl) {
         if (!silent) toast.error('请先填写 API URL');
@@ -1566,7 +1731,7 @@ async function deleteSub2ApiService(id, name) {
 async function handleSaveSub2ApiService(e) {
     e.preventDefault();
     const id = document.getElementById('sub2api-service-id').value;
-    const defaultRemoteProxyValue = getSub2ApiDefaultRemoteProxySelect()?.value || '';
+    const defaultRemoteProxyValue = getSub2ApiDefaultRemoteProxyInput()?.value || '';
     const parsedDefaultRemoteProxyId = defaultRemoteProxyValue === '' ? null : parseInt(defaultRemoteProxyValue, 10);
     const data = {
         name: document.getElementById('sub2api-service-name').value,

@@ -351,10 +351,19 @@
                             </div>
                             <div class="form-group">
                                 <label for="sub2api-default-remote-proxy-id">默认远端代理</label>
+                                <input type="hidden" id="sub2api-default-remote-proxy-id" value="">
                                 <div class="sub2api-remote-proxy-row">
-                                    <select id="sub2api-default-remote-proxy-id" class="sub2api-remote-proxy-select">
-                                        <option value="">不设置默认代理</option>
-                                    </select>
+                                    <div class="sub2api-remote-proxy-picker">
+                                        <button type="button" class="sub2api-remote-proxy-trigger" id="sub2api-remote-proxy-trigger" aria-expanded="false">
+                                            <div class="sub2api-remote-proxy-trigger-content" id="sub2api-remote-proxy-trigger-content">
+                                                <span class="sub2api-remote-proxy-placeholder">不设置默认代理</span>
+                                            </div>
+                                            <span class="sub2api-remote-proxy-trigger-arrow">▾</span>
+                                        </button>
+                                        <div class="sub2api-remote-proxy-dropdown" id="sub2api-remote-proxy-dropdown">
+                                            <div class="sub2api-remote-proxy-options" id="sub2api-remote-proxy-options"></div>
+                                        </div>
+                                    </div>
                                     <button type="button" class="btn btn-secondary sub2api-remote-proxy-btn" id="load-sub2api-remote-proxies-btn">加载代理</button>
                                 </div>
                                 <p class="sub2api-remote-proxy-hint">与账号页上传时选择的远端代理一致；仅在未显式选择代理时作为默认值。</p>

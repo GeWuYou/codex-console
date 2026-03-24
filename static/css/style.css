@@ -363,8 +363,152 @@ body {
     gap: var(--spacing-sm);
 }
 
-.sub2api-remote-proxy-select {
+.sub2api-remote-proxy-picker {
+    position: relative;
     flex: 1;
+}
+
+.sub2api-remote-proxy-trigger {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    cursor: pointer;
+    transition: all var(--transition);
+    text-align: left;
+}
+
+.sub2api-remote-proxy-trigger:hover,
+.sub2api-remote-proxy-trigger[aria-expanded="true"] {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--primary-light);
+}
+
+.sub2api-remote-proxy-trigger-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.sub2api-remote-proxy-trigger-arrow {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    flex-shrink: 0;
+}
+
+.sub2api-remote-proxy-placeholder {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.sub2api-remote-proxy-summary-title-row,
+.sub2api-remote-proxy-option-title-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.sub2api-remote-proxy-summary-name,
+.sub2api-remote-proxy-option-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.sub2api-remote-proxy-summary-meta,
+.sub2api-remote-proxy-option-meta {
+    margin-top: 4px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.sub2api-remote-proxy-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    background: var(--info-light);
+    color: var(--info-color);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.sub2api-remote-proxy-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+
+.sub2api-remote-proxy-dropdown.active {
+    display: block;
+}
+
+.sub2api-remote-proxy-options {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: var(--spacing-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.sub2api-remote-proxy-option {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: inherit;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-align: left;
+}
+
+.sub2api-remote-proxy-option:hover {
+    background: var(--surface-hover);
+    border-color: var(--text-muted);
+}
+
+.sub2api-remote-proxy-option.selected {
+    border-color: var(--primary-color);
+    background: var(--primary-light);
+}
+
+.sub2api-remote-proxy-option-main {
+    min-width: 0;
+    flex: 1;
+}
+
+.sub2api-remote-proxy-option-check {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.sub2api-remote-proxy-option.selected .sub2api-remote-proxy-option-check {
+    color: var(--primary-color);
 }
 
 .sub2api-remote-proxy-btn {
