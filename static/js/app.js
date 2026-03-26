@@ -20,6 +20,7 @@ let displayedLogs = new Set();  // 用于日志去重
 let toastShown = false;  // 标记是否已显示过 toast
 let availableServices = {
     tempmail: { available: true, services: [] },
+    yyds_mail: { available: false, services: [] },
     outlook: { available: false, services: [] },
     moe_mail: { available: false, services: [] },
     temp_mail: { available: false, services: [] },
@@ -242,18 +243,31 @@ function updateEmailServiceOptions() {
     const select = elements.emailService;
     select.innerHTML = '';
 
-    // Tempmail
-    if (availableServices.tempmail.available) {
+    // 官方临时邮箱渠道
+    if ((availableServices.tempmail && availableServices.tempmail.available) ||
+        (availableServices.yyds_mail && availableServices.yyds_mail.available)) {
         const optgroup = document.createElement('optgroup');
         optgroup.label = '🌐 临时邮箱';
 
-        availableServices.tempmail.services.forEach(service => {
-            const option = document.createElement('option');
-            option.value = `tempmail:${service.id || 'default'}`;
-            option.textContent = service.name;
-            option.dataset.type = 'tempmail';
-            optgroup.appendChild(option);
-        });
+        if (availableServices.tempmail && availableServices.tempmail.available) {
+            availableServices.tempmail.services.forEach(service => {
+                const option = document.createElement('option');
+                option.value = `tempmail:${service.id || 'default'}`;
+                option.textContent = service.name;
+                option.dataset.type = 'tempmail';
+                optgroup.appendChild(option);
+            });
+        }
+
+        if (availableServices.yyds_mail && availableServices.yyds_mail.available) {
+            availableServices.yyds_mail.services.forEach(service => {
+                const option = document.createElement('option');
+                option.value = `yyds_mail:${service.id || 'default'}`;
+                option.textContent = service.name + (service.default_domain ? ` (@${service.default_domain})` : '');
+                option.dataset.type = 'yyds_mail';
+                optgroup.appendChild(option);
+            });
+        }
 
         select.appendChild(optgroup);
     }
@@ -402,6 +416,11 @@ function handleServiceChange(e) {
         const service = availableServices.outlook.services.find(s => s.id == id);
         if (service) {
             addLog('info', `[系统] 已选择 Outlook 账户: ${service.name}`);
+        }
+    } else if (type === 'yyds_mail') {
+        const service = availableServices.yyds_mail.services.find(s => (s.id || 'default') == id);
+        if (service) {
+            addLog('info', `[系统] 已选择 YYDS Mail 渠道: ${service.name}`);
         }
     } else if (type === 'moe_mail') {
         const service = availableServices.moe_mail.services.find(s => s.id == id);

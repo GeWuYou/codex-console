@@ -11,6 +11,7 @@ from .base import (
     EmailServiceType
 )
 from .tempmail import TempmailService
+from .yyds_mail import YYDSMailService
 from .outlook import OutlookService
 from .moe_mail import MeoMailEmailService
 from .temp_mail import TempMailService
@@ -20,6 +21,7 @@ from .imap_mail import ImapMailService
 
 # 注册服务
 EmailServiceFactory.register(EmailServiceType.TEMPMAIL, TempmailService)
+EmailServiceFactory.register(EmailServiceType.YYDS_MAIL, YYDSMailService)
 EmailServiceFactory.register(EmailServiceType.OUTLOOK, OutlookService)
 EmailServiceFactory.register(EmailServiceType.MOE_MAIL, MeoMailEmailService)
 EmailServiceFactory.register(EmailServiceType.TEMP_MAIL, TempMailService)
@@ -53,6 +55,7 @@ __all__ = [
     'EmailServiceType',
     # 服务类
     'TempmailService',
+    'YYDSMailService',
     'OutlookService',
     'MeoMailEmailService',
     'TempMailService',

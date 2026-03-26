@@ -41,6 +41,12 @@ const elements = {
     tempmailApi: document.getElementById('tempmail-api'),
     tempmailEnabled: document.getElementById('tempmail-enabled'),
     testTempmailBtn: document.getElementById('test-tempmail-btn'),
+    yydsMailForm: document.getElementById('yyds-mail-form'),
+    yydsMailApi: document.getElementById('yyds-mail-api'),
+    yydsMailApiKey: document.getElementById('yyds-mail-api-key'),
+    yydsMailDomain: document.getElementById('yyds-mail-domain'),
+    yydsMailEnabled: document.getElementById('yyds-mail-enabled'),
+    testYydsMailBtn: document.getElementById('test-yyds-mail-btn'),
 
     // 添加自定义域名模态框
     addCustomModal: document.getElementById('add-custom-modal'),
@@ -159,6 +165,8 @@ function initEventListeners() {
     // 临时邮箱配置
     elements.tempmailForm.addEventListener('submit', handleSaveTempmail);
     elements.testTempmailBtn.addEventListener('click', handleTestTempmail);
+    elements.yydsMailForm.addEventListener('submit', handleSaveYydsMail);
+    elements.testYydsMailBtn.addEventListener('click', handleTestYydsMail);
 
     // 点击其他地方关闭更多菜单
     document.addEventListener('click', () => {
@@ -383,8 +391,16 @@ async function loadTempmailConfig() {
     try {
         const settings = await api.get('/settings');
         if (settings.tempmail) {
-            elements.tempmailApi.value = settings.tempmail.api_url || '';
+            elements.tempmailApi.value = settings.tempmail.api_url || settings.tempmail.base_url || '';
             elements.tempmailEnabled.checked = settings.tempmail.enabled !== false;
+        }
+        if (settings.yyds_mail) {
+            elements.yydsMailApi.value = settings.yyds_mail.api_url || settings.yyds_mail.base_url || '';
+            elements.yydsMailDomain.value = settings.yyds_mail.default_domain || '';
+            elements.yydsMailEnabled.checked = settings.yyds_mail.enabled === true;
+            elements.yydsMailApiKey.value = '';
+            elements.yydsMailApiKey.dataset.hasKey = settings.yyds_mail.has_api_key ? 'true' : 'false';
+            elements.yydsMailApiKey.placeholder = settings.yyds_mail.has_api_key ? '已设置，留空保持不变' : 'AC-your_api_key';
         }
     } catch (error) {
         // 忽略错误
@@ -566,6 +582,7 @@ async function handleSaveTempmail(e) {
             enabled: elements.tempmailEnabled.checked
         });
         toast.success('配置已保存');
+        loadStats();
     } catch (error) {
         toast.error('保存失败: ' + error.message);
     }
@@ -577,6 +594,7 @@ async function handleTestTempmail() {
     elements.testTempmailBtn.textContent = '测试中...';
     try {
         const result = await api.post('/email-services/test-tempmail', {
+            provider: 'tempmail',
             api_url: elements.tempmailApi.value
         });
         if (result.success) toast.success('临时邮箱连接正常');
@@ -586,6 +604,65 @@ async function handleTestTempmail() {
     } finally {
         elements.testTempmailBtn.disabled = false;
         elements.testTempmailBtn.textContent = '🔌 测试连接';
+    }
+}
+
+// 保存 YYDS Mail 配置
+async function handleSaveYydsMail(e) {
+    e.preventDefault();
+    const apiKey = elements.yydsMailApiKey.value.trim();
+    const hasSavedKey = elements.yydsMailApiKey.dataset.hasKey === 'true';
+
+    if (elements.yydsMailEnabled.checked && !apiKey && !hasSavedKey) {
+        toast.error('启用 YYDS Mail 前请先填写 API Key');
+        return;
+    }
+
+    const payload = {
+        yyds_api_url: elements.yydsMailApi.value,
+        yyds_default_domain: elements.yydsMailDomain.value,
+        yyds_enabled: elements.yydsMailEnabled.checked
+    };
+    if (apiKey || !hasSavedKey) {
+        payload.yyds_api_key = apiKey;
+    }
+
+    try {
+        await api.post('/settings/tempmail', payload);
+        if (apiKey) {
+            elements.yydsMailApiKey.value = '';
+            elements.yydsMailApiKey.dataset.hasKey = 'true';
+            elements.yydsMailApiKey.placeholder = '已设置，留空保持不变';
+        } else if (!hasSavedKey && !apiKey) {
+            elements.yydsMailApiKey.dataset.hasKey = 'false';
+        }
+        toast.success('YYDS Mail 配置已保存');
+        loadStats();
+    } catch (error) {
+        toast.error('保存失败: ' + error.message);
+    }
+}
+
+// 测试 YYDS Mail
+async function handleTestYydsMail() {
+    elements.testYydsMailBtn.disabled = true;
+    elements.testYydsMailBtn.textContent = '测试中...';
+    try {
+        const payload = {
+            provider: 'yyds_mail',
+            api_url: elements.yydsMailApi.value
+        };
+        const apiKey = elements.yydsMailApiKey.value.trim();
+        if (apiKey) payload.api_key = apiKey;
+
+        const result = await api.post('/email-services/test-tempmail', payload);
+        if (result.success) toast.success('YYDS Mail 连接正常');
+        else toast.error('连接失败: ' + (result.error || '未知错误'));
+    } catch (error) {
+        toast.error('测试失败: ' + error.message);
+    } finally {
+        elements.testYydsMailBtn.disabled = false;
+        elements.testYydsMailBtn.textContent = '🔌 测试连接';
     }
 }
 

@@ -1018,6 +1018,16 @@ def _build_inbox_config(db, service_type, email: str) -> dict:
             "max_retries": settings.tempmail_max_retries,
         }
 
+    if service_type == EST.YYDS_MAIL:
+        settings = get_settings()
+        return {
+            "base_url": settings.yyds_mail_base_url,
+            "api_key": settings.yyds_mail_api_key.get_secret_value() if settings.yyds_mail_api_key else "",
+            "default_domain": settings.yyds_mail_default_domain,
+            "timeout": settings.yyds_mail_timeout,
+            "max_retries": settings.yyds_mail_max_retries,
+        }
+
     if service_type == EST.MOE_MAIL:
         # 按域名后缀匹配，找不到则取 priority 最小的
         domain = email.split("@")[1] if "@" in email else ""

@@ -170,22 +170,60 @@
                     <h3>🌐 临时邮箱配置</h3>
                 </div>
                 <div class="card-body">
-                    <form id="tempmail-form">
-                        <div class="form-group">
-                            <label for="tempmail-api">Tempmail.lol API 地址</label>
-                            <input type="text" id="tempmail-api" name="api_url" placeholder="https://tempmail.lol/api">
-                        </div>
-                        <div class="form-group">
-                            <label>
-                                <input type="checkbox" id="tempmail-enabled" checked>
-                                启用临时邮箱
-                            </label>
-                        </div>
-                        <div class="form-actions">
-                            <button type="submit" class="btn btn-primary">💾 保存设置</button>
-                            <button type="button" class="btn btn-secondary" id="test-tempmail-btn">🔌 测试连接</button>
-                        </div>
-                    </form>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:var(--spacing-lg);">
+                        <form id="tempmail-form" class="card" style="margin:0;border:1px solid var(--border-light);">
+                            <div class="card-header">
+                                <h4 style="margin:0;">Tempmail.lol</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label for="tempmail-api">API 地址</label>
+                                    <input type="text" id="tempmail-api" name="api_url" placeholder="https://api.tempmail.lol/v2">
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="tempmail-enabled" checked>
+                                        启用 Tempmail.lol
+                                    </label>
+                                </div>
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">💾 保存设置</button>
+                                    <button type="button" class="btn btn-secondary" id="test-tempmail-btn">🔌 测试连接</button>
+                                </div>
+                            </div>
+                        </form>
+
+                        <form id="yyds-mail-form" class="card" style="margin:0;border:1px solid var(--border-light);">
+                            <div class="card-header">
+                                <h4 style="margin:0;">YYDS Mail</h4>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label for="yyds-mail-api">API 地址</label>
+                                    <input type="text" id="yyds-mail-api" name="yyds_api_url" placeholder="https://maliapi.215.im/v1">
+                                </div>
+                                <div class="form-group">
+                                    <label for="yyds-mail-api-key">API Key</label>
+                                    <input type="password" id="yyds-mail-api-key" name="yyds_api_key" placeholder="AC-your_api_key">
+                                    <small style="color: var(--text-muted);">使用文档中的 `X-API-Key` 调用方式</small>
+                                </div>
+                                <div class="form-group">
+                                    <label for="yyds-mail-domain">默认域名（可选）</label>
+                                    <input type="text" id="yyds-mail-domain" name="yyds_default_domain" placeholder="public.example.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="yyds-mail-enabled">
+                                        启用 YYDS Mail
+                                    </label>
+                                </div>
+                                <div class="form-actions">
+                                    <button type="submit" class="btn btn-primary">💾 保存设置</button>
+                                    <button type="button" class="btn btn-secondary" id="test-yyds-mail-btn">🔌 测试连接</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </div>
         </main>
