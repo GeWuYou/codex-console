@@ -55,6 +55,7 @@ const elements = {
     cancelAddCustom: document.getElementById('cancel-add-custom'),
     customSubType: document.getElementById('custom-sub-type'),
     addMoemailFields: document.getElementById('add-moemail-fields'),
+    addYydsMailFields: document.getElementById('add-yydsmail-fields'),
     addTempmailFields: document.getElementById('add-tempmail-fields'),
     addDuckmailFields: document.getElementById('add-duckmail-fields'),
     addFreemailFields: document.getElementById('add-freemail-fields'),
@@ -66,6 +67,7 @@ const elements = {
     closeEditCustomModal: document.getElementById('close-edit-custom-modal'),
     cancelEditCustom: document.getElementById('cancel-edit-custom'),
     editMoemailFields: document.getElementById('edit-moemail-fields'),
+    editYydsMailFields: document.getElementById('edit-yydsmail-fields'),
     editTempmailFields: document.getElementById('edit-tempmail-fields'),
     editDuckmailFields: document.getElementById('edit-duckmail-fields'),
     editFreemailFields: document.getElementById('edit-freemail-fields'),
@@ -81,6 +83,7 @@ const elements = {
 };
 
 const CUSTOM_SUBTYPE_LABELS = {
+    yydsmail: 'YYDS Mail (YYDS Mail API)',
     moemail: '🔗 MoeMail（自定义域名 API）',
     tempmail: '📮 TempMail（自部署 Cloudflare Worker）',
     duckmail: '🦆 DuckMail（DuckMail API）',
@@ -190,6 +193,7 @@ function closeEmailMoreMenu(el) {
 function switchAddSubType(subType) {
     elements.customSubType.value = subType;
     elements.addMoemailFields.style.display = subType === 'moemail' ? '' : 'none';
+    elements.addYydsMailFields.style.display = subType === 'yydsmail' ? '' : 'none';
     elements.addTempmailFields.style.display = subType === 'tempmail' ? '' : 'none';
     elements.addDuckmailFields.style.display = subType === 'duckmail' ? '' : 'none';
     elements.addFreemailFields.style.display = subType === 'freemail' ? '' : 'none';
@@ -200,6 +204,7 @@ function switchAddSubType(subType) {
 function switchEditSubType(subType) {
     elements.editCustomSubTypeHidden.value = subType;
     elements.editMoemailFields.style.display = subType === 'moemail' ? '' : 'none';
+    elements.editYydsMailFields.style.display = subType === 'yydsmail' ? '' : 'none';
     elements.editTempmailFields.style.display = subType === 'tempmail' ? '' : 'none';
     elements.editDuckmailFields.style.display = subType === 'duckmail' ? '' : 'none';
     elements.editFreemailFields.style.display = subType === 'freemail' ? '' : 'none';
@@ -212,7 +217,7 @@ async function loadStats() {
     try {
         const data = await api.get('/email-services/stats');
         elements.outlookCount.textContent = data.outlook_count || 0;
-        elements.customCount.textContent = (data.custom_count || 0) + (data.temp_mail_count || 0) + (data.duck_mail_count || 0) + (data.freemail_count || 0) + (data.imap_mail_count || 0);
+        elements.customCount.textContent = (data.custom_count || 0) + (data.yyds_mail_count || 0) + (data.temp_mail_count || 0) + (data.duck_mail_count || 0) + (data.freemail_count || 0) + (data.imap_mail_count || 0);
         elements.tempmailStatus.textContent = data.tempmail_available ? '可用' : '不可用';
         elements.totalEnabled.textContent = data.enabled_count || 0;
     } catch (error) {
@@ -288,6 +293,9 @@ function getCustomServiceTypeBadge(subType) {
     if (subType === 'moemail') {
         return '<span class="status-badge info">MoeMail</span>';
     }
+    if (subType === 'yydsmail') {
+        return '<span class="status-badge" style="background-color:#455a64;color:white;">YYDS Mail</span>';
+    }
     if (subType === 'tempmail') {
         return '<span class="status-badge warning">TempMail</span>';
     }
@@ -317,8 +325,9 @@ function getCustomServiceAddress(service) {
 // 加载自定义邮箱服务（moe_mail + temp_mail + duck_mail + freemail 合并）
 async function loadCustomServices() {
     try {
-        const [r1, r2, r3, r4, r5] = await Promise.all([
+        const [r1, r2, r3, r4, r5, r6] = await Promise.all([
             api.get('/email-services?service_type=moe_mail'),
+            api.get('/email-services?service_type=yyds_mail'),
             api.get('/email-services?service_type=temp_mail'),
             api.get('/email-services?service_type=duck_mail'),
             api.get('/email-services?service_type=freemail'),
@@ -326,10 +335,11 @@ async function loadCustomServices() {
         ]);
         customServices = [
             ...(r1.services || []).map(s => ({ ...s, _subType: 'moemail' })),
-            ...(r2.services || []).map(s => ({ ...s, _subType: 'tempmail' })),
-            ...(r3.services || []).map(s => ({ ...s, _subType: 'duckmail' })),
-            ...(r4.services || []).map(s => ({ ...s, _subType: 'freemail' })),
-            ...(r5.services || []).map(s => ({ ...s, _subType: 'imap' }))
+            ...(r2.services || []).map(s => ({ ...s, _subType: 'yydsmail' })),
+            ...(r3.services || []).map(s => ({ ...s, _subType: 'tempmail' })),
+            ...(r4.services || []).map(s => ({ ...s, _subType: 'duckmail' })),
+            ...(r5.services || []).map(s => ({ ...s, _subType: 'freemail' })),
+            ...(r6.services || []).map(s => ({ ...s, _subType: 'imap' }))
         ];
 
         if (customServices.length === 0) {
@@ -459,6 +469,13 @@ async function handleAddCustom(e) {
             api_key: formData.get('api_key'),
             default_domain: formData.get('domain')
         };
+    } else if (subType === 'yydsmail') {
+        serviceType = 'yyds_mail';
+        config = {
+            base_url: formData.get('yyds_base_url'),
+            api_key: formData.get('yyds_api_key'),
+            default_domain: formData.get('yyds_domain')
+        };
     } else if (subType === 'tempmail') {
         serviceType = 'temp_mail';
         config = {
@@ -491,6 +508,11 @@ async function handleAddCustom(e) {
             email: formData.get('imap_email'),
             password: formData.get('imap_password')
         };
+    }
+
+    if (subType === 'yydsmail' && (!config.base_url || !config.api_key)) {
+        toast.error('YYDS Mail 需要填写 API URL 和 API Key');
+        return;
     }
 
     const data = {
@@ -690,6 +712,8 @@ async function editCustomService(id, subType) {
         const resolvedSubType = subType || (
             service.service_type === 'temp_mail'
                 ? 'tempmail'
+                : service.service_type === 'yyds_mail'
+                    ? 'yydsmail'
                 : service.service_type === 'duck_mail'
                     ? 'duckmail'
                     : service.service_type === 'freemail'
@@ -711,6 +735,11 @@ async function editCustomService(id, subType) {
             document.getElementById('edit-custom-api-key').value = '';
             document.getElementById('edit-custom-api-key').placeholder = service.config?.api_key ? '已设置，留空保持不变' : 'API Key';
             document.getElementById('edit-custom-domain').value = service.config?.default_domain || service.config?.domain || '';
+        } else if (resolvedSubType === 'yydsmail') {
+            document.getElementById('edit-yyds-base-url').value = service.config?.base_url || '';
+            document.getElementById('edit-yyds-api-key').value = '';
+            document.getElementById('edit-yyds-api-key').placeholder = service.config?.api_key ? '已设置，留空保持不变' : 'Enter API Key';
+            document.getElementById('edit-yyds-domain').value = service.config?.default_domain || service.config?.domain || '';
         } else if (resolvedSubType === 'tempmail') {
             document.getElementById('edit-tm-base-url').value = service.config?.base_url || '';
             document.getElementById('edit-tm-admin-password').value = '';
@@ -756,6 +785,13 @@ async function handleEditCustom(e) {
             default_domain: formData.get('domain')
         };
         const apiKey = formData.get('api_key');
+        if (apiKey && apiKey.trim()) config.api_key = apiKey.trim();
+    } else if (subType === 'yydsmail') {
+        config = {
+            base_url: formData.get('yyds_base_url'),
+            default_domain: formData.get('yyds_domain')
+        };
+        const apiKey = formData.get('yyds_api_key');
         if (apiKey && apiKey.trim()) config.api_key = apiKey.trim();
     } else if (subType === 'tempmail') {
         config = {

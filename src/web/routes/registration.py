@@ -1173,6 +1173,24 @@ async def get_available_email_services():
         })
 
     with get_db() as db:
+        yyds_mail_services = db.query(EmailServiceModel).filter(
+            EmailServiceModel.service_type == "yyds_mail",
+            EmailServiceModel.enabled == True
+        ).order_by(EmailServiceModel.priority.asc()).all()
+
+        for service in yyds_mail_services:
+            config = service.config or {}
+            result["yyds_mail"]["services"].append({
+                "id": service.id,
+                "name": service.name,
+                "type": "yyds_mail",
+                "default_domain": config.get("default_domain"),
+                "priority": service.priority
+            })
+
+        if yyds_mail_services:
+            result["yyds_mail"]["count"] = len(result["yyds_mail"]["services"])
+            result["yyds_mail"]["available"] = True
         # 获取 Outlook 账户
         outlook_services = db.query(EmailServiceModel).filter(
             EmailServiceModel.service_type == "outlook",

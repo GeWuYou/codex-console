@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic import SecretStr
 
 from src.config.constants import EmailServiceType
-from src.database.models import Base
+from src.database.models import Base, EmailService
 from src.database.session import DatabaseSessionManager
 from src.services.base import EmailServiceFactory
 from src.web.routes import email as email_routes
@@ -85,3 +85,53 @@ def test_registration_available_services_include_yyds_mail(monkeypatch):
     assert result["yyds_mail"]["services"][0]["name"] == "YYDS Mail"
     assert result["yyds_mail"]["services"][0]["type"] == "yyds_mail"
     assert result["yyds_mail"]["services"][0]["default_domain"] == "public.example.com"
+
+
+def test_registration_available_services_include_custom_yyds_mail(monkeypatch):
+    runtime_dir = Path("tests_runtime")
+    runtime_dir.mkdir(exist_ok=True)
+    db_path = runtime_dir / "custom_yyds_routes.db"
+    if db_path.exists():
+        db_path.unlink()
+
+    manager = DatabaseSessionManager(f"sqlite:///{db_path}")
+    Base.metadata.create_all(bind=manager.engine)
+
+    with manager.session_scope() as session:
+        session.add(
+            EmailService(
+                service_type="yyds_mail",
+                name="YYDS Mail Custom",
+                config={
+                    "base_url": "https://maliapi.custom.test/v1",
+                    "api_key": "AC-custom-key",
+                    "default_domain": "custom.example.com",
+                },
+                enabled=True,
+                priority=1,
+            )
+        )
+
+    @contextmanager
+    def fake_get_db():
+        session = manager.SessionLocal()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    monkeypatch.setattr(registration_routes, "get_db", fake_get_db)
+
+    import src.config.settings as settings_module
+
+    monkeypatch.setattr(settings_module, "get_settings", lambda: DummySettings())
+    monkeypatch.setattr(registration_routes, "get_settings", lambda: DummySettings())
+
+    result = asyncio.run(registration_routes.get_available_email_services())
+
+    assert result["yyds_mail"]["available"] is True
+    assert result["yyds_mail"]["count"] == 2
+    assert result["yyds_mail"]["services"][0]["name"] == "YYDS Mail"
+    assert result["yyds_mail"]["services"][1]["name"] == "YYDS Mail Custom"
+    assert result["yyds_mail"]["services"][1]["id"] is not None
+    assert result["yyds_mail"]["services"][1]["default_domain"] == "custom.example.com"
