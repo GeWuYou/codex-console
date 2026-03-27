@@ -36,6 +36,15 @@ let wsHeartbeatInterval = null;  // 心跳定时器
 let batchWsHeartbeatInterval = null;  // 批量任务心跳定时器
 let activeTaskUuid = null;   // 当前活跃的单任务 UUID（用于页面重新可见时重连）
 let activeBatchId = null;    // 当前活跃的批量任务 ID（用于页面重新可见时重连）
+let wsReconnectTimer = null;
+let batchWsReconnectTimer = null;
+let wsReconnectAttempts = 0;
+let batchWsReconnectAttempts = 0;
+let wsManualClose = false;
+let batchWsManualClose = false;
+
+const WS_RECONNECT_BASE_DELAY = 1000;
+const WS_RECONNECT_MAX_DELAY = 10000;
 
 // DOM 元素
 const elements = {
@@ -548,24 +557,105 @@ async function handleSingleRegistration(requestData) {
 
 // ============== WebSocket 功能 ==============
 
+function getReconnectDelay(attempt) {
+    return Math.min(WS_RECONNECT_BASE_DELAY * (2 ** Math.max(0, attempt - 1)), WS_RECONNECT_MAX_DELAY);
+}
+
+function clearWebSocketReconnect() {
+    if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    }
+    wsReconnectAttempts = 0;
+}
+
+function clearBatchWebSocketReconnect() {
+    if (batchWsReconnectTimer) {
+        clearTimeout(batchWsReconnectTimer);
+        batchWsReconnectTimer = null;
+    }
+    batchWsReconnectAttempts = 0;
+}
+
+function scheduleWebSocketReconnect(taskUuid) {
+    if (!taskUuid || wsReconnectTimer || wsManualClose || taskCompleted || taskFinalStatus !== null || activeTaskUuid !== taskUuid) {
+        return;
+    }
+
+    wsReconnectAttempts += 1;
+    const delay = getReconnectDelay(wsReconnectAttempts);
+    addLog('warning', `[系统] WebSocket 已断开，${delay / 1000} 秒后尝试重连任务监控...`);
+
+    wsReconnectTimer = setTimeout(() => {
+        wsReconnectTimer = null;
+        connectWebSocket(taskUuid);
+    }, delay);
+}
+
+function scheduleBatchWebSocketReconnect(batchId) {
+    if (!batchId || batchWsReconnectTimer || batchWsManualClose || batchCompleted || batchFinalStatus !== null || activeBatchId !== batchId) {
+        return;
+    }
+
+    batchWsReconnectAttempts += 1;
+    const delay = getReconnectDelay(batchWsReconnectAttempts);
+    addLog('warning', `[系统] 批量任务 WebSocket 已断开，${delay / 1000} 秒后尝试重连监控...`);
+
+    batchWsReconnectTimer = setTimeout(() => {
+        batchWsReconnectTimer = null;
+        connectBatchWebSocket(batchId);
+    }, delay);
+}
+
+function startCurrentBatchPolling(batchId) {
+    if (!batchId) return;
+
+    const pollingMode = currentBatch && currentBatch.batch_id === batchId
+        ? currentBatch.pollingMode
+        : (isOutlookBatchMode ? 'outlook_batch' : 'batch');
+
+    if (pollingMode === 'outlook_batch') {
+        startOutlookBatchPolling(batchId);
+        return;
+    }
+
+    startBatchPolling(batchId);
+}
+
 // 连接 WebSocket
 function connectWebSocket(taskUuid) {
+    activeTaskUuid = taskUuid;
+
+    if (webSocket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(webSocket.readyState)) {
+        return;
+    }
+
+    if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    }
+    wsManualClose = false;
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/ws/task/${taskUuid}`;
 
     try {
-        webSocket = new WebSocket(wsUrl);
+        const socket = new WebSocket(wsUrl);
+        webSocket = socket;
 
-        webSocket.onopen = () => {
+        socket.onopen = () => {
+            if (webSocket !== socket) return;
             console.log('WebSocket 连接成功');
             useWebSocket = true;
+            clearWebSocketReconnect();
             // 停止轮询（如果有）
             stopLogPolling();
             // 开始心跳
             startWebSocketHeartbeat();
         };
 
-        webSocket.onmessage = (event) => {
+        socket.onmessage = (event) => {
+            if (webSocket !== socket) return;
             const data = JSON.parse(event.data);
 
             if (data.type === 'log') {
@@ -607,43 +697,52 @@ function connectWebSocket(taskUuid) {
             }
         };
 
-        webSocket.onclose = (event) => {
+        socket.onclose = (event) => {
+            const isCurrentSocket = webSocket === socket;
+            if (isCurrentSocket) {
+                webSocket = null;
+                stopWebSocketHeartbeat();
+            }
+
             console.log('WebSocket 连接关闭:', event.code);
-            stopWebSocketHeartbeat();
 
-            // 只有在任务未完成且最终状态不是完成状态时才切换到轮询
-            // 使用 taskFinalStatus 而不是 currentTask.status，因为 currentTask 可能已被重置
-            const shouldPoll = !taskCompleted &&
-                               taskFinalStatus === null;  // 如果 taskFinalStatus 有值，说明任务已完成
+            const shouldReconnect = isCurrentSocket &&
+                !wsManualClose &&
+                !taskCompleted &&
+                taskFinalStatus === null &&
+                activeTaskUuid === taskUuid;
 
-            if (shouldPoll && currentTask) {
-                console.log('切换到轮询模式');
+            if (shouldReconnect) {
+                console.log('WebSocket 断开，准备自动重连');
                 useWebSocket = false;
-                startLogPolling(currentTask.task_uuid);
+                startLogPolling(taskUuid);
+                scheduleWebSocketReconnect(taskUuid);
             }
         };
 
-        webSocket.onerror = (error) => {
+        socket.onerror = (error) => {
+            if (webSocket !== socket) return;
             console.error('WebSocket 错误:', error);
-            // 切换到轮询
             useWebSocket = false;
-            stopWebSocketHeartbeat();
-            startLogPolling(taskUuid);
         };
 
     } catch (error) {
         console.error('WebSocket 连接失败:', error);
         useWebSocket = false;
         startLogPolling(taskUuid);
+        scheduleWebSocketReconnect(taskUuid);
     }
 }
 
 // 断开 WebSocket
 function disconnectWebSocket() {
+    wsManualClose = true;
+    clearWebSocketReconnect();
     stopWebSocketHeartbeat();
     if (webSocket) {
-        webSocket.close();
+        const socket = webSocket;
         webSocket = null;
+        socket.close();
     }
 }
 
@@ -697,7 +796,7 @@ async function handleBatchRegistration(requestData) {
     try {
         const data = await api.post('/registration/batch', requestData);
 
-        currentBatch = data;
+        currentBatch = { ...data, pollingMode: 'batch' };
         activeBatchId = data.batch_id;  // 保存用于重连
         // 持久化到 sessionStorage，跨页面导航后可恢复
         sessionStorage.setItem('activeTask', JSON.stringify({ batch_id: data.batch_id, mode: 'batch', total: data.count }));
@@ -774,6 +873,10 @@ async function handleCancelTask() {
 
 // 开始轮询日志
 function startLogPolling(taskUuid) {
+    if (logPollingInterval) {
+        return;
+    }
+
     let lastLogIndex = 0;
 
     logPollingInterval = setInterval(async () => {
@@ -837,6 +940,10 @@ function stopLogPolling() {
 
 // 开始轮询批量状态
 function startBatchPolling(batchId) {
+    if (batchPollingInterval) {
+        return;
+    }
+
     batchPollingInterval = setInterval(async () => {
         try {
             const data = await api.get(`/registration/batch/${batchId}`);
@@ -1067,6 +1174,10 @@ function getLogType(log) {
 function resetButtons() {
     elements.startBtn.disabled = false;
     elements.cancelBtn.disabled = true;
+    stopLogPolling();
+    stopBatchPolling();
+    clearWebSocketReconnect();
+    clearBatchWebSocketReconnect();
     currentTask = null;
     currentBatch = null;
     isBatchMode = false;
@@ -1224,7 +1335,7 @@ async function handleOutlookBatchRegistration() {
             return;
         }
 
-        currentBatch = { batch_id: data.batch_id, ...data };
+        currentBatch = { batch_id: data.batch_id, ...data, pollingMode: 'outlook_batch' };
         activeBatchId = data.batch_id;  // 保存用于重连
         // 持久化到 sessionStorage，跨页面导航后可恢复
         sessionStorage.setItem('activeTask', JSON.stringify({ batch_id: data.batch_id, mode: isOutlookBatchMode ? 'outlook_batch' : 'batch', total: data.to_register }));
@@ -1248,21 +1359,37 @@ async function handleOutlookBatchRegistration() {
 
 // 连接批量任务 WebSocket
 function connectBatchWebSocket(batchId) {
+    activeBatchId = batchId;
+
+    if (batchWebSocket && [WebSocket.OPEN, WebSocket.CONNECTING].includes(batchWebSocket.readyState)) {
+        return;
+    }
+
+    if (batchWsReconnectTimer) {
+        clearTimeout(batchWsReconnectTimer);
+        batchWsReconnectTimer = null;
+    }
+    batchWsManualClose = false;
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/api/ws/batch/${batchId}`;
 
     try {
-        batchWebSocket = new WebSocket(wsUrl);
+        const socket = new WebSocket(wsUrl);
+        batchWebSocket = socket;
 
-        batchWebSocket.onopen = () => {
+        socket.onopen = () => {
+            if (batchWebSocket !== socket) return;
             console.log('批量任务 WebSocket 连接成功');
+            clearBatchWebSocketReconnect();
             // 停止轮询（如果有）
             stopBatchPolling();
             // 开始心跳
             startBatchWebSocketHeartbeat();
         };
 
-        batchWebSocket.onmessage = (event) => {
+        socket.onmessage = (event) => {
+            if (batchWebSocket !== socket) return;
             const data = JSON.parse(event.data);
 
             if (data.type === 'log') {
@@ -1315,40 +1442,49 @@ function connectBatchWebSocket(batchId) {
             }
         };
 
-        batchWebSocket.onclose = (event) => {
+        socket.onclose = (event) => {
+            const isCurrentSocket = batchWebSocket === socket;
+            if (isCurrentSocket) {
+                batchWebSocket = null;
+                stopBatchWebSocketHeartbeat();
+            }
+
             console.log('批量任务 WebSocket 连接关闭:', event.code);
-            stopBatchWebSocketHeartbeat();
 
-            // 只有在任务未完成且最终状态不是完成状态时才切换到轮询
-            // 使用 batchFinalStatus 而不是 currentBatch.status，因为 currentBatch 可能已被重置
-            const shouldPoll = !batchCompleted &&
-                               batchFinalStatus === null;  // 如果 batchFinalStatus 有值，说明任务已完成
+            const shouldReconnect = isCurrentSocket &&
+                !batchWsManualClose &&
+                !batchCompleted &&
+                batchFinalStatus === null &&
+                activeBatchId === batchId;
 
-            if (shouldPoll && currentBatch) {
-                console.log('切换到轮询模式');
-                startOutlookBatchPolling(currentBatch.batch_id);
+            if (shouldReconnect) {
+                console.log('批量任务 WebSocket 断开，准备自动重连');
+                startCurrentBatchPolling(batchId);
+                scheduleBatchWebSocketReconnect(batchId);
             }
         };
 
-        batchWebSocket.onerror = (error) => {
+        socket.onerror = (error) => {
+            if (batchWebSocket !== socket) return;
             console.error('批量任务 WebSocket 错误:', error);
-            stopBatchWebSocketHeartbeat();
-            // 切换到轮询
-            startOutlookBatchPolling(batchId);
         };
 
     } catch (error) {
         console.error('批量任务 WebSocket 连接失败:', error);
-        startOutlookBatchPolling(batchId);
+        startCurrentBatchPolling(batchId);
+        scheduleBatchWebSocketReconnect(batchId);
     }
 }
 
 // 断开批量任务 WebSocket
 function disconnectBatchWebSocket() {
+    batchWsManualClose = true;
+    clearBatchWebSocketReconnect();
     stopBatchWebSocketHeartbeat();
     if (batchWebSocket) {
-        batchWebSocket.close();
+        const socket = batchWebSocket;
         batchWebSocket = null;
+        socket.close();
     }
 }
 
@@ -1379,6 +1515,10 @@ function cancelBatchViaWebSocket() {
 
 // 开始轮询 Outlook 批量状态（降级方案）
 function startOutlookBatchPolling(batchId) {
+    if (batchPollingInterval) {
+        return;
+    }
+
     batchPollingInterval = setInterval(async () => {
         try {
             const data = await api.get(`/registration/outlook-batch/${batchId}`);
@@ -1504,7 +1644,7 @@ async function restoreActiveTask() {
                 return;
             }
             // 批量任务仍在运行，恢复状态
-            currentBatch = { batch_id, ...data };
+            currentBatch = { batch_id, ...data, pollingMode: mode };
             activeBatchId = batch_id;
             isOutlookBatchMode = (mode === 'outlook_batch');
             batchCompleted = false;
