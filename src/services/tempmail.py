@@ -177,6 +177,12 @@ class TempmailService(BaseEmailService):
                     }
                 )
 
+                if response.status_code == 404:
+                    self.update_status(False, EmailServiceError("Tempmail inbox 不存在或已过期"))
+                    raise EmailServiceError(
+                        f"Tempmail inbox 不存在或已过期: {email} (token: {token[:12]}...)"
+                    )
+
                 if response.status_code != 200:
                     time.sleep(3)
                     continue
