@@ -151,6 +151,7 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: codex-console-*
           path: dist
           merge-multiple: true
 
