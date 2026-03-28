@@ -82,6 +82,11 @@ cp .env.example .env
 | `APP_ACCESS_PASSWORD` | Web UI 访问密钥 | `admin123` |
 | `APP_DATABASE_URL` | 数据库连接字符串 | `data/database.db` |
 
+说明:
+
+- 本地 `.env` 和直接运行 `python webui.py` 时，优先使用 `APP_*` 变量
+- Docker 镜像默认使用 `WEBUI_*` 变量覆盖到容器内运行参数
+
 优先级:
 
 `命令行参数 > 环境变量(.env) > 数据库设置 > 默认值`
@@ -89,7 +94,7 @@ cp .env.example .env
 ## 启动 Web UI
 
 ```bash
-# 默认启动（127.0.0.1:8000）
+# 默认启动（监听 0.0.0.0:8000，可通过 127.0.0.1:8000 访问）
 python webui.py
 
 # 指定地址和端口
@@ -126,7 +131,7 @@ codex-console.exe --access-password mypassword
 ### 使用 docker-compose
 
 ```bash
-docker-compose up -d
+docker-compose up -d --build
 ```
 
 你可以在 `docker-compose.yml` 中修改环境变量，比如端口和访问密码。
@@ -139,9 +144,11 @@ docker run -d \
   -e WEBUI_HOST=0.0.0.0 \
   -e WEBUI_PORT=1455 \
   -e WEBUI_ACCESS_PASSWORD=your_secure_password \
+  -e LOG_LEVEL=info \
   -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
   --name codex-console \
-  ghcr.io/<yourname>/codex-console:latest
+  ghcr.io/<owner>/<repo>:latest
 ```
 
 说明:
@@ -154,7 +161,29 @@ docker run -d \
 
 注意:
 
+镜像里默认执行的是 `python webui.py`，并通过 `WEBUI_*` 环境变量把容器端口固定在 `1455`。
+
 `-v $(pwd)/data:/app/data` 很重要，这会把数据库和账号数据持久化到宿主机。否则容器一重启，数据也可能跟着表演消失术。
+
+## CI/CD
+
+仓库现在建议使用两条 GitHub Actions 流水线:
+
+- `CI`: 在 `pull_request` 和 `main` 分支 `push` 时运行，执行 `pytest`、Docker 构建冒烟和 Linux PyInstaller 打包冒烟
+- `Release`: 在推送 `vX.Y.Z` 标签时运行，先重新校验测试，再并行发布二进制产物、GHCR Docker 镜像和 GitHub Release
+
+推荐发布流程:
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+发布成功后可获取:
+
+- GitHub Release 二进制附件
+- `ghcr.io/<owner>/<repo>:v1.2.3`
+- `ghcr.io/<owner>/<repo>:latest`
 
 ## 使用远程 PostgreSQL
 
