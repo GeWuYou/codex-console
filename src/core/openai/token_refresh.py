@@ -4,8 +4,6 @@ Token 刷新模块
 """
 
 import logging
-import json
-import time
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -319,6 +317,7 @@ class TokenRefreshManager:
         """
         # 优先尝试 Session Token
         last_result = None
+        should_try_relogin_fallback = False
 
         if account.session_token:
             logger.info(f"尝试使用 Session Token 刷新账号 {account.email}")
@@ -326,6 +325,9 @@ class TokenRefreshManager:
             if result.success:
                 return result
             last_result = result
+            should_try_relogin_fallback = should_try_relogin_fallback or (
+                result.error_code == TOKEN_INVALIDATED_CODE
+            )
             logger.warning(f"Session Token 刷新失败，尝试 OAuth 刷新")
 
         # 尝试 OAuth Refresh Token
@@ -338,8 +340,11 @@ class TokenRefreshManager:
             if result.success:
                 return result
             last_result = result
+            should_try_relogin_fallback = should_try_relogin_fallback or (
+                result.error_code == TOKEN_INVALIDATED_CODE
+            )
 
-        if last_result and last_result.error_code == TOKEN_INVALIDATED_CODE:
+        if last_result and should_try_relogin_fallback:
             logger.warning(f"账号 {account.email} 的令牌已失效，尝试邮箱密码重登兜底")
             fallback_result = self.refresh_by_account_password(account, db)
             if not fallback_result.success:
