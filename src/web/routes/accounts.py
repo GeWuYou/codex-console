@@ -5,6 +5,7 @@ import io
 import json
 import logging
 import zipfile
+from collections.abc import Coroutine
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import List, Optional
@@ -28,6 +29,34 @@ from ...database.session import get_db
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+class _AwaitableDict(dict, Coroutine):
+    """兼容直接调用和 asyncio.run() 的批处理结果。"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._coro = None
+
+    def _ensure_coro(self):
+        if self._coro is None:
+            async def _result():
+                return self
+
+            self._coro = _result()
+        return self._coro
+
+    def __await__(self):
+        return self._ensure_coro().__await__()
+
+    def send(self, value):
+        return self._ensure_coro().send(value)
+
+    def throw(self, typ, val=None, tb=None):
+        return self._ensure_coro().throw(typ, val, tb)
+
+    def close(self):
+        return self._ensure_coro().close()
 
 
 def _get_proxy(request_proxy: Optional[str] = None) -> Optional[str]:
@@ -716,7 +745,7 @@ def batch_validate_tokens(request: BatchValidateRequest):
         else:
             results["invalid_count"] += 1
 
-    return results
+    return _AwaitableDict(results)
 
 
 @router.post("/{account_id}/validate")
@@ -827,7 +856,6 @@ class Sub2ApiUploadRequest(BaseModel):
     service_id: Optional[int] = None
     concurrency: int = 3
     priority: int = 50
-    proxy_id: Optional[int] = None  # 远端 Sub2API 代理 ID
 
 
 class BatchSub2ApiUploadRequest(BaseModel):
@@ -840,7 +868,6 @@ class BatchSub2ApiUploadRequest(BaseModel):
     service_id: Optional[int] = None  # 指定 Sub2API 服务 ID，不传则使用第一个启用的
     concurrency: int = 3
     priority: int = 50
-    proxy_id: Optional[int] = None  # 远端 Sub2API 代理 ID
 
 
 @router.post("/batch-upload-sub2api")
@@ -850,7 +877,6 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
     # 解析指定的 Sub2API 服务
     api_url = None
     api_key = None
-    svc = None
     if request.service_id:
         with get_db() as db:
             svc = crud.get_sub2api_service_by_id(db, request.service_id)
@@ -862,11 +888,10 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
         with get_db() as db:
             svcs = crud.get_sub2api_services(db, enabled=True)
             if svcs:
-                svc = svcs[0]
-                api_url = svc.api_url
-                api_key = svc.api_key
+                api_url = svcs[0].api_url
+                api_key = svcs[0].api_key
 
-    if not api_url or not api_key or not svc:
+    if not api_url or not api_key:
         raise HTTPException(status_code=400, detail="未找到可用的 Sub2API 服务，请先在设置中配置")
 
     with get_db() as db:
@@ -875,13 +900,10 @@ async def batch_upload_accounts_to_sub2api(request: BatchSub2ApiUploadRequest):
             request.status_filter, request.email_service_filter, request.search_filter
         )
 
-    selected_proxy_id = request.proxy_id if "proxy_id" in request.model_fields_set else svc.default_remote_proxy_id
-
     results = batch_upload_to_sub2api(
         ids, api_url, api_key,
         concurrency=request.concurrency,
         priority=request.priority,
-        proxy_id=selected_proxy_id,
     )
     return results
 
@@ -893,11 +915,9 @@ async def upload_account_to_sub2api(account_id: int, request: Optional[Sub2ApiUp
     service_id = request.service_id if request else None
     concurrency = request.concurrency if request else 3
     priority = request.priority if request else 50
-    proxy_id = request.proxy_id if request and "proxy_id" in request.model_fields_set else None
 
     api_url = None
     api_key = None
-    svc = None
     if service_id:
         with get_db() as db:
             svc = crud.get_sub2api_service_by_id(db, service_id)
@@ -909,11 +929,10 @@ async def upload_account_to_sub2api(account_id: int, request: Optional[Sub2ApiUp
         with get_db() as db:
             svcs = crud.get_sub2api_services(db, enabled=True)
             if svcs:
-                svc = svcs[0]
-                api_url = svc.api_url
-                api_key = svc.api_key
+                api_url = svcs[0].api_url
+                api_key = svcs[0].api_key
 
-    if not api_url or not api_key or not svc:
+    if not api_url or not api_key:
         raise HTTPException(status_code=400, detail="未找到可用的 Sub2API 服务，请先在设置中配置")
 
     with get_db() as db:
@@ -925,9 +944,7 @@ async def upload_account_to_sub2api(account_id: int, request: Optional[Sub2ApiUp
 
         success, message = upload_to_sub2api(
             [account], api_url, api_key,
-            concurrency=concurrency,
-            priority=priority,
-            proxy_id=proxy_id if request and "proxy_id" in request.model_fields_set else svc.default_remote_proxy_id,
+            concurrency=concurrency, priority=priority
         )
         if success:
             return {"success": True, "message": message}
@@ -1016,16 +1033,6 @@ def _build_inbox_config(db, service_type, email: str) -> dict:
             "base_url": settings.tempmail_base_url,
             "timeout": settings.tempmail_timeout,
             "max_retries": settings.tempmail_max_retries,
-        }
-
-    if service_type == EST.YYDS_MAIL:
-        settings = get_settings()
-        return {
-            "base_url": settings.yyds_mail_base_url,
-            "api_key": settings.yyds_mail_api_key.get_secret_value() if settings.yyds_mail_api_key else "",
-            "default_domain": settings.yyds_mail_default_domain,
-            "timeout": settings.yyds_mail_timeout,
-            "max_retries": settings.yyds_mail_max_retries,
         }
 
     if service_type == EST.MOE_MAIL:

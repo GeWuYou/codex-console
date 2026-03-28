@@ -17,6 +17,20 @@ from ...config.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
+if not hasattr(cffi_requests, "post"):
+    def _compat_post(url: str, **kwargs):
+        session = cffi_requests.Session()
+        return session.post(url, **kwargs)
+
+    cffi_requests.post = _compat_post
+
+if not hasattr(cffi_requests, "get"):
+    def _compat_get(url: str, **kwargs):
+        session = cffi_requests.Session()
+        return session.get(url, **kwargs)
+
+    cffi_requests.get = _compat_get
+
 
 def _normalize_cpa_auth_files_url(api_url: str) -> str:
     """将用户填写的 CPA 地址规范化为 auth-files 接口地址。"""
