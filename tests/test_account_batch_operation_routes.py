@@ -128,7 +128,75 @@ def test_batch_refresh_processes_ids_concurrently(monkeypatch):
 
     assert result["success_count"] == 2
     assert result["failed_count"] == 0
+    assert len(result["details"]) == 2
     assert elapsed < 0.30
+
+
+def test_refresh_account_falls_back_to_password_relogin_on_invalidated_401(monkeypatch):
+    manager = _build_manager("account_batch_operation_routes_refresh_fallback.db")
+
+    with manager.session_scope() as session:
+        account = Account(
+            email="fallback@example.com",
+            password="Password123",
+            email_service="tempmail",
+            email_service_id="mailbox-1",
+            access_token="expired-access",
+            refresh_token="expired-refresh",
+            session_token="expired-session",
+            status="active",
+        )
+        session.add(account)
+        session.flush()
+        account_id = account.id
+
+    fake_get_db = _build_get_db(manager)
+    monkeypatch.setattr(token_refresh, "get_db", fake_get_db)
+    monkeypatch.setattr(
+        token_refresh.TokenRefreshManager,
+        "refresh_by_session_token",
+        lambda self, session_token: TokenRefreshResult(
+            success=False,
+            error_message="认证令牌已失效，需要重新登录",
+            error_code=token_refresh.TOKEN_INVALIDATED_CODE,
+            failure_stage="session_refresh",
+        ),
+    )
+    monkeypatch.setattr(
+        token_refresh.TokenRefreshManager,
+        "refresh_by_oauth_token",
+        lambda self, refresh_token, client_id=None: TokenRefreshResult(
+            success=False,
+            error_message="认证令牌已失效，需要重新登录",
+            error_code=token_refresh.TOKEN_INVALIDATED_CODE,
+            failure_stage="oauth_refresh",
+        ),
+    )
+    monkeypatch.setattr(
+        token_refresh.TokenRefreshManager,
+        "refresh_by_account_password",
+        lambda self, account, db: TokenRefreshResult(
+            success=True,
+            access_token="fresh-access",
+            refresh_token="fresh-refresh",
+            session_token="fresh-session",
+            id_token="fresh-id",
+            used_fallback_relogin=True,
+            expires_at=datetime.utcnow(),
+        ),
+    )
+
+    result = token_refresh.refresh_account_token(account_id)
+
+    assert result.success is True
+    assert result.used_fallback_relogin is True
+
+    with manager.session_scope() as session:
+        updated = session.query(Account).filter(Account.id == account_id).first()
+        assert updated is not None
+        assert updated.access_token == "fresh-access"
+        assert updated.refresh_token == "fresh-refresh"
+        assert updated.session_token == "fresh-session"
 
 
 def test_batch_validate_processes_ids_concurrently(monkeypatch):

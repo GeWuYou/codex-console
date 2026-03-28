@@ -12,12 +12,15 @@ from datetime import datetime, timedelta
 
 from curl_cffi import requests as cffi_requests
 
+from ..account_email_service import create_email_service_for_account
+from ..register import RegistrationEngine
 from ...config.settings import get_settings
 from ...database.session import get_db
 from ...database import crud
 from ...database.models import Account
 
 logger = logging.getLogger(__name__)
+TOKEN_INVALIDATED_CODE = "token_invalidated"
 
 
 @dataclass
@@ -26,8 +29,16 @@ class TokenRefreshResult:
     success: bool
     access_token: str = ""
     refresh_token: str = ""
+    id_token: str = ""
+    session_token: str = ""
+    account_id: str = ""
+    workspace_id: str = ""
     expires_at: Optional[datetime] = None
     error_message: str = ""
+    error_code: Optional[str] = None
+    failure_stage: Optional[str] = None
+    used_fallback_relogin: bool = False
+    fallback_error: Optional[str] = None
 
 
 class TokenRefreshManager:
@@ -56,6 +67,21 @@ class TokenRefreshManager:
         """创建 HTTP 会话"""
         session = cffi_requests.Session(impersonate="chrome120", proxy=self.proxy_url)
         return session
+
+    @staticmethod
+    def _is_invalidated_response(status_code: int, body: str) -> bool:
+        normalized = (body or "").lower()
+        return status_code == 401 and (
+            "authentication token has been invalidated" in normalized
+            or "please try signing in again" in normalized
+        )
+
+    @classmethod
+    def _format_refresh_error(cls, prefix: str, response) -> Tuple[str, Optional[str]]:
+        body = response.text[:300] if getattr(response, "text", None) else ""
+        if cls._is_invalidated_response(response.status_code, body):
+            return "认证令牌已失效，需要重新登录", TOKEN_INVALIDATED_CODE
+        return f"{prefix}: HTTP {response.status_code}", None
 
     def refresh_by_session_token(self, session_token: str) -> TokenRefreshResult:
         """
@@ -91,7 +117,11 @@ class TokenRefreshManager:
             )
 
             if response.status_code != 200:
-                result.error_message = f"Session token 刷新失败: HTTP {response.status_code}"
+                result.error_message, result.error_code = self._format_refresh_error(
+                    "Session token 刷新失败",
+                    response,
+                )
+                result.failure_stage = "session_refresh"
                 logger.warning(result.error_message)
                 return result
 
@@ -101,6 +131,7 @@ class TokenRefreshManager:
             access_token = data.get("accessToken")
             if not access_token:
                 result.error_message = "Session token 刷新失败: 未找到 accessToken"
+                result.failure_stage = "session_refresh"
                 logger.warning(result.error_message)
                 return result
 
@@ -122,6 +153,7 @@ class TokenRefreshManager:
 
         except Exception as e:
             result.error_message = f"Session token 刷新异常: {str(e)}"
+            result.failure_stage = "session_refresh"
             logger.error(result.error_message)
             return result
 
@@ -167,7 +199,11 @@ class TokenRefreshManager:
             )
 
             if response.status_code != 200:
-                result.error_message = f"OAuth token 刷新失败: HTTP {response.status_code}"
+                result.error_message, result.error_code = self._format_refresh_error(
+                    "OAuth token 刷新失败",
+                    response,
+                )
+                result.failure_stage = "oauth_refresh"
                 logger.warning(f"{result.error_message}, 响应: {response.text[:200]}")
                 return result
 
@@ -180,6 +216,7 @@ class TokenRefreshManager:
 
             if not access_token:
                 result.error_message = "OAuth token 刷新失败: 未找到 access_token"
+                result.failure_stage = "oauth_refresh"
                 logger.warning(result.error_message)
                 return result
 
@@ -196,10 +233,77 @@ class TokenRefreshManager:
 
         except Exception as e:
             result.error_message = f"OAuth token 刷新异常: {str(e)}"
+            result.failure_stage = "oauth_refresh"
             logger.error(result.error_message)
             return result
 
-    def refresh_account(self, account: Account) -> TokenRefreshResult:
+    def refresh_by_account_password(self, account: Account, db) -> TokenRefreshResult:
+        """使用邮箱、密码和邮箱 OTP 重新登录获取 token。"""
+        if not account.email or not account.password:
+            return TokenRefreshResult(
+                success=False,
+                error_message="账号缺少邮箱或密码，无法执行邮箱密码重登",
+                error_code="relogin_unavailable",
+                failure_stage="relogin_precheck",
+                used_fallback_relogin=True,
+            )
+
+        try:
+            _, email_service = create_email_service_for_account(
+                db,
+                account,
+                proxy_url=self.proxy_url,
+            )
+        except Exception as e:
+            return TokenRefreshResult(
+                success=False,
+                error_message=f"初始化邮箱服务失败: {e}",
+                error_code="relogin_unavailable",
+                failure_stage="relogin_precheck",
+                used_fallback_relogin=True,
+            )
+
+        try:
+            engine = RegistrationEngine(email_service=email_service, proxy_url=self.proxy_url)
+            relogin_result = engine.login_existing_account(
+                email=account.email,
+                password=account.password,
+                email_info={
+                    "email": account.email,
+                    "service_id": account.email_service_id,
+                },
+            )
+        except Exception as e:
+            return TokenRefreshResult(
+                success=False,
+                error_message=f"邮箱密码重登异常: {e}",
+                error_code="relogin_failed",
+                failure_stage="relogin",
+                used_fallback_relogin=True,
+            )
+
+        if not relogin_result.success:
+            return TokenRefreshResult(
+                success=False,
+                error_message=relogin_result.error_message or "邮箱密码重登失败",
+                error_code="relogin_failed",
+                failure_stage="relogin",
+                used_fallback_relogin=True,
+            )
+
+        return TokenRefreshResult(
+            success=True,
+            access_token=relogin_result.access_token,
+            refresh_token=relogin_result.refresh_token,
+            id_token=relogin_result.id_token,
+            session_token=relogin_result.session_token,
+            account_id=relogin_result.account_id,
+            workspace_id=relogin_result.workspace_id,
+            expires_at=relogin_result.expires_at,
+            used_fallback_relogin=True,
+        )
+
+    def refresh_account(self, account: Account, db) -> TokenRefreshResult:
         """
         刷新账号的 Token
 
@@ -214,11 +318,14 @@ class TokenRefreshManager:
             TokenRefreshResult: 刷新结果
         """
         # 优先尝试 Session Token
+        last_result = None
+
         if account.session_token:
             logger.info(f"尝试使用 Session Token 刷新账号 {account.email}")
             result = self.refresh_by_session_token(account.session_token)
             if result.success:
                 return result
+            last_result = result
             logger.warning(f"Session Token 刷新失败，尝试 OAuth 刷新")
 
         # 尝试 OAuth Refresh Token
@@ -228,12 +335,26 @@ class TokenRefreshManager:
                 refresh_token=account.refresh_token,
                 client_id=account.client_id
             )
-            return result
+            if result.success:
+                return result
+            last_result = result
+
+        if last_result and last_result.error_code == TOKEN_INVALIDATED_CODE:
+            logger.warning(f"账号 {account.email} 的令牌已失效，尝试邮箱密码重登兜底")
+            fallback_result = self.refresh_by_account_password(account, db)
+            if not fallback_result.success:
+                fallback_result.fallback_error = fallback_result.error_message
+            return fallback_result
+
+        if last_result:
+            return last_result
 
         # 无可用刷新方式
         return TokenRefreshResult(
             success=False,
-            error_message="账号没有可用的刷新方式（缺少 session_token 和 refresh_token）"
+            error_message="账号没有可用的刷新方式（缺少 session_token 和 refresh_token）",
+            error_code="no_refresh_credential",
+            failure_stage="precheck",
         )
 
     def validate_token(self, access_token: str) -> Tuple[bool, Optional[str]]:
@@ -289,7 +410,7 @@ def refresh_account_token(account_id: int, proxy_url: Optional[str] = None) -> T
             return TokenRefreshResult(success=False, error_message="账号不存在")
 
         manager = TokenRefreshManager(proxy_url=proxy_url)
-        result = manager.refresh_account(account)
+        result = manager.refresh_account(account, db)
 
         if result.success:
             # 更新数据库
@@ -300,6 +421,14 @@ def refresh_account_token(account_id: int, proxy_url: Optional[str] = None) -> T
 
             if result.refresh_token:
                 update_data["refresh_token"] = result.refresh_token
+            if result.id_token:
+                update_data["id_token"] = result.id_token
+            if result.session_token:
+                update_data["session_token"] = result.session_token
+            if result.account_id:
+                update_data["account_id"] = result.account_id
+            if result.workspace_id:
+                update_data["workspace_id"] = result.workspace_id
 
             if result.expires_at:
                 update_data["expires_at"] = result.expires_at

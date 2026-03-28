@@ -608,10 +608,17 @@ async function refreshToken(id) {
         const result = await api.post(`/accounts/${id}/refresh`);
 
         if (result.success) {
-            toast.success('Token刷新成功');
+            if (result.used_fallback_relogin) {
+                toast.success('Token已通过邮箱密码重登重新获取');
+            } else {
+                toast.success('Token刷新成功');
+            }
             loadAccounts();
         } else {
-            toast.error('刷新失败: ' + (result.error || '未知错误'));
+            const reason = result.error_code
+                ? `${result.error_code}: ${result.error || '未知错误'}`
+                : (result.error || '未知错误');
+            toast.error('刷新失败: ' + reason);
         }
     } catch (error) {
         toast.error('刷新失败: ' + error.message);
@@ -630,9 +637,15 @@ async function handleBatchRefresh() {
         extractStats: (result, count) => ({
             total: result.success_count + result.failed_count || count,
             success: result.success_count,
-            failed: result.failed_count
+            failed: result.failed_count,
+            fallbackRelogins: (result.details || []).filter(item => item.used_fallback_relogin && item.success).length
         }),
-        summary: (stats) => `Token 刷新完成：成功 ${stats.success}，失败 ${stats.failed}`,
+        summary: (stats) => {
+            const fallbackText = stats.fallbackRelogins
+                ? `，其中 ${stats.fallbackRelogins} 个通过邮箱密码重登恢复`
+                : '';
+            return `Token 刷新完成：成功 ${stats.success}，失败 ${stats.failed}${fallbackText}`;
+        },
         errorPrefix: '批量刷新失败',
         afterComplete: async () => {
             await Promise.allSettled([loadStats(), loadAccounts()]);

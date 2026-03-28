@@ -48,6 +48,7 @@ class RegistrationResult:
     refresh_token: str = ""
     id_token: str = ""
     session_token: str = ""  # 会话令牌
+    expires_at: Optional[datetime] = None
     error_message: str = ""
     logs: list = None
     metadata: dict = None
@@ -65,6 +66,7 @@ class RegistrationResult:
             "refresh_token": self.refresh_token[:20] + "..." if self.refresh_token else "",
             "id_token": self.id_token[:20] + "..." if self.id_token else "",
             "session_token": self.session_token[:20] + "..." if self.session_token else "",
+            "expires_at": self.expires_at.isoformat() if self.expires_at else "",
             "error_message": self.error_message,
             "logs": self.logs or [],
             "metadata": self.metadata or {},
@@ -497,6 +499,12 @@ class RegistrationEngine:
         result.id_token = token_info.get("id_token", "")
         result.password = self.password or ""
         result.source = "login" if self._is_existing_account else "register"
+        expires_at = str(token_info.get("expired") or "").strip()
+        if expires_at:
+            try:
+                result.expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+            except ValueError:
+                self._log(f"解析 token 过期时间失败: {expires_at}", "warning")
 
         session_cookie = self.session.cookies.get("__Secure-next-auth.session-token")
         if session_cookie:
@@ -964,6 +972,75 @@ class RegistrationEngine:
             result.error_message = str(e)
             return result
 
+    def login_existing_account(
+        self,
+        email: str,
+        password: str,
+        email_info: Optional[Dict[str, Any]] = None,
+    ) -> RegistrationResult:
+        """使用已有邮箱与密码重新登录并获取新 token。"""
+        result = RegistrationResult(
+            success=False,
+            email=email,
+            password=password,
+            logs=self.logs,
+        )
+
+        try:
+            self.email = email
+            self.password = password
+            self.email_info = email_info or {"email": email}
+            self._is_existing_account = True
+            self._token_acquisition_requires_login = False
+            self._otp_sent_at = None
+
+            self._log("=" * 60)
+            self._log("账号重登启动，准备重新获取可用 token")
+            self._log("=" * 60)
+
+            did, sen_token = self._prepare_authorize_flow("账号重登")
+            if not did:
+                result.error_message = "重登时获取 Device ID 失败"
+                return result
+            if not sen_token:
+                result.error_message = "重登时 Sentinel POW 验证失败"
+                return result
+
+            login_start_result = self._submit_login_start(did, sen_token)
+            if not login_start_result.success:
+                result.error_message = f"重登提交邮箱失败: {login_start_result.error_message}"
+                return result
+            if login_start_result.page_type != OPENAI_PAGE_TYPES["LOGIN_PASSWORD"]:
+                result.error_message = f"重登未进入密码页面: {login_start_result.page_type or 'unknown'}"
+                return result
+
+            password_result = self._submit_login_password()
+            if not password_result.success:
+                result.error_message = f"重登提交密码失败: {password_result.error_message}"
+                return result
+            if not password_result.is_existing_account:
+                result.error_message = f"重登未进入验证码页面: {password_result.page_type or 'unknown'}"
+                return result
+
+            if not self._complete_token_exchange(result):
+                return result
+
+            result.success = True
+            result.metadata = {
+                "email_service": self.email_service.service_type.value,
+                "proxy_used": self.proxy_url,
+                "registered_at": datetime.now().isoformat(),
+                "is_existing_account": True,
+                "token_acquired_via_relogin": False,
+                "relogin_refresh": True,
+            }
+            return result
+
+        except Exception as e:
+            self._log(f"账号重登时发生未预期错误: {e}", "error")
+            result.error_message = str(e)
+            return result
+
     def save_to_database(self, result: RegistrationResult) -> bool:
         """
         保存注册结果到数据库
@@ -997,6 +1074,7 @@ class RegistrationEngine:
                     refresh_token=result.refresh_token,
                     id_token=result.id_token,
                     proxy_used=self.proxy_url,
+                    expires_at=result.expires_at,
                     extra_data=result.metadata,
                     source=result.source
                 )

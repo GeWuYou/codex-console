@@ -294,3 +294,53 @@ def test_existing_account_login_uses_auto_sent_otp_without_manual_send():
     assert len(email_service.otp_requests) == 1
     assert email_service.otp_requests[0]["otp_sent_at"] is not None
     assert result.metadata["token_acquired_via_relogin"] is False
+
+
+def test_login_existing_account_reuses_login_flow():
+    session = QueueSession([
+        ("GET", "https://auth.example.test/flow/1", _response_with_did("did-1")),
+        (
+            "POST",
+            OPENAI_API_ENDPOINTS["signup"],
+            DummyResponse(payload={"page": {"type": OPENAI_PAGE_TYPES["LOGIN_PASSWORD"]}}),
+        ),
+        (
+            "POST",
+            OPENAI_API_ENDPOINTS["password_verify"],
+            DummyResponse(payload={"page": {"type": OPENAI_PAGE_TYPES["EMAIL_OTP_VERIFICATION"]}}),
+        ),
+        ("POST", OPENAI_API_ENDPOINTS["validate_otp"], _response_with_login_cookies("ws-relogin", "session-relogin")),
+        (
+            "POST",
+            OPENAI_API_ENDPOINTS["select_workspace"],
+            DummyResponse(payload={"continue_url": "https://auth.example.test/continue-relogin"}),
+        ),
+        (
+            "GET",
+            "https://auth.example.test/continue-relogin",
+            DummyResponse(
+                status_code=302,
+                headers={"Location": "http://localhost:1455/auth/callback?code=code-1&state=state-1"},
+            ),
+        ),
+    ])
+
+    email_service = FakeEmailService(["112233"])
+    engine = RegistrationEngine(email_service)
+    fake_oauth = FakeOAuthManager()
+    engine.http_client = FakeOpenAIClient([session], ["sentinel-1"])
+    engine.oauth_manager = fake_oauth
+
+    result = engine.login_existing_account(
+        email="tester@example.com",
+        password="Password123",
+        email_info={"email": "tester@example.com", "service_id": "mailbox-1"},
+    )
+
+    assert result.success is True
+    assert result.source == "login"
+    assert result.session_token == "session-relogin"
+    assert fake_oauth.start_calls == 1
+    assert sum(1 for call in session.calls if call["url"] == OPENAI_API_ENDPOINTS["send_otp"]) == 0
+    assert len(email_service.otp_requests) == 1
+    assert email_service.otp_requests[0]["email_id"] == "mailbox-1"

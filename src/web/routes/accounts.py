@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from ...config.constants import AccountStatus
 from ...config.settings import get_settings
+from ...core.account_email_service import build_account_email_service_config
 from ...core.openai.token_refresh import refresh_account_token as do_refresh
 from ...core.openai.token_refresh import validate_account_token as do_validate
 from ...core.upload.cpa_upload import generate_token_json, batch_upload_to_cpa, upload_to_cpa
@@ -652,7 +653,8 @@ def batch_refresh_tokens(request: BatchRefreshRequest):
     results = {
         "success_count": 0,
         "failed_count": 0,
-        "errors": []
+        "errors": [],
+        "details": [],
     }
 
     with get_db() as db:
@@ -676,9 +678,23 @@ def batch_refresh_tokens(request: BatchRefreshRequest):
         result = item["result"]
         if result.success:
             results["success_count"] += 1
+            results["details"].append({
+                "id": item["id"],
+                "success": True,
+                "used_fallback_relogin": result.used_fallback_relogin,
+                "error_code": None,
+                "error": None,
+            })
         else:
             results["failed_count"] += 1
             results["errors"].append({"id": item["id"], "error": result.error_message})
+            results["details"].append({
+                "id": item["id"],
+                "success": False,
+                "used_fallback_relogin": result.used_fallback_relogin,
+                "error_code": result.error_code,
+                "error": result.error_message,
+            })
 
     return results
 
@@ -693,12 +709,18 @@ def refresh_account_token(account_id: int, request: Optional[TokenRefreshRequest
         return {
             "success": True,
             "message": "Token 刷新成功",
-            "expires_at": result.expires_at.isoformat() if result.expires_at else None
+            "expires_at": result.expires_at.isoformat() if result.expires_at else None,
+            "used_fallback_relogin": result.used_fallback_relogin,
+            "failure_stage": result.failure_stage,
+            "error_code": result.error_code,
         }
     else:
         return {
             "success": False,
-            "error": result.error_message
+            "error": result.error_message,
+            "used_fallback_relogin": result.used_fallback_relogin,
+            "failure_stage": result.failure_stage,
+            "error_code": result.error_code,
         }
 
 
@@ -1024,68 +1046,7 @@ async def upload_account_to_tm(account_id: int, request: Optional[UploadTMReques
 
 def _build_inbox_config(db, service_type, email: str) -> dict:
     """根据账号邮箱服务类型从数据库构建服务配置（不传 proxy_url）"""
-    from ...database.models import EmailService as EmailServiceModel
-    from ...services import EmailServiceType as EST
-
-    if service_type == EST.TEMPMAIL:
-        settings = get_settings()
-        return {
-            "base_url": settings.tempmail_base_url,
-            "timeout": settings.tempmail_timeout,
-            "max_retries": settings.tempmail_max_retries,
-        }
-
-    if service_type == EST.MOE_MAIL:
-        # 按域名后缀匹配，找不到则取 priority 最小的
-        domain = email.split("@")[1] if "@" in email else ""
-        services = db.query(EmailServiceModel).filter(
-            EmailServiceModel.service_type == "moe_mail",
-            EmailServiceModel.enabled == True
-        ).order_by(EmailServiceModel.priority.asc()).all()
-        svc = None
-        for s in services:
-            cfg = s.config or {}
-            if cfg.get("default_domain") == domain or cfg.get("domain") == domain:
-                svc = s
-                break
-        if not svc and services:
-            svc = services[0]
-        if not svc:
-            return None
-        cfg = svc.config.copy()
-        if "api_url" in cfg and "base_url" not in cfg:
-            cfg["base_url"] = cfg.pop("api_url")
-        return cfg
-
-    # 其余服务类型：直接按 service_type 查数据库
-    type_map = {
-        EST.TEMP_MAIL: "temp_mail",
-        EST.DUCK_MAIL: "duck_mail",
-        EST.FREEMAIL: "freemail",
-        EST.IMAP_MAIL: "imap_mail",
-        EST.OUTLOOK: "outlook",
-    }
-    db_type = type_map.get(service_type)
-    if not db_type:
-        return None
-
-    query = db.query(EmailServiceModel).filter(
-        EmailServiceModel.service_type == db_type,
-        EmailServiceModel.enabled == True
-    )
-    if service_type == EST.OUTLOOK:
-        # 按 config.email 匹配账号 email
-        services = query.all()
-        svc = next((s for s in services if (s.config or {}).get("email") == email), None)
-    else:
-        svc = query.order_by(EmailServiceModel.priority.asc()).first()
-
-    if not svc:
-        return None
-    cfg = svc.config.copy() if svc.config else {}
-    if "api_url" in cfg and "base_url" not in cfg:
-        cfg["base_url"] = cfg.pop("api_url")
-    return cfg
+    return build_account_email_service_config(db, service_type, email)
 
 
 @router.post("/{account_id}/inbox-code")
