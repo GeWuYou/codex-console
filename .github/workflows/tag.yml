@@ -1,0 +1,64 @@
+name: Auto Increment Version and Tag
+
+on:
+  workflow_run:
+    workflows: ["CI - Build & Test"]
+    types:
+      - completed
+  workflow_dispatch:
+concurrency:
+  group: auto-tag-main
+  cancel-in-progress: false
+
+jobs:
+  auto-tag:
+    if: >
+      github.ref == 'refs/heads/main' &&
+      (
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          contains(github.event.workflow_run.head_commit.message, '[release ci]')
+        )
+        ||
+        github.event_name == 'workflow_dispatch'
+      )
+
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tagged: ${{ steps.create_tag.outcome == 'success' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Get next version
+        id: version
+        run: |
+          LATEST_TAG=$(git tag --list "v*" --sort=-v:refname | head -n 1)
+          LATEST_TAG=${LATEST_TAG:-v0.0.0}
+          VERSION=${LATEST_TAG#v}
+          IFS=. read MAJOR MINOR PATCH <<< "$VERSION"
+          PATCH=$((PATCH+1))
+          echo "new_tag=v$MAJOR.$MINOR.$PATCH" >> $GITHUB_OUTPUT
+
+      - name: Create tag
+        env:
+          PAT: ${{ secrets.PAT_TOKEN }}
+          TAG: ${{ steps.version.outputs.new_tag }}
+        run: |
+          set -e
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+
+          if git show-ref --tags --verify --quiet "refs/tags/$TAG"; then
+            echo "Tag $TAG already exists, skipping"
+            exit 0
+          fi
+
+          git tag -a "$TAG" -m "Auto tag $TAG"
+          git push "https://x-access-token:${PAT}@github.com/${{ github.repository }}.git" "$TAG"
