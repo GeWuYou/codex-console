@@ -197,9 +197,9 @@
                                             </div>
                                         </div>
                                         <div style="margin-top: var(--spacing-sm); display: flex; gap: var(--spacing-xs); flex-wrap: wrap;">
-                                            <button type="button" class="btn btn-ghost btn-sm" onclick="selectAllOutlookAccounts()">全选</button>
-                                            <button type="button" class="btn btn-ghost btn-sm" onclick="selectUnregisteredOutlook()">只选未注册</button>
-                                            <button type="button" class="btn btn-ghost btn-sm" onclick="deselectAllOutlookAccounts()">取消全选</button>
+                                            <button type="button" class="btn btn-ghost btn-sm" id="outlook-select-all-btn" onclick="selectAllOutlookAccounts()">全选</button>
+                                            <button type="button" class="btn btn-ghost btn-sm" id="outlook-select-unregistered-btn" onclick="selectUnregisteredOutlook()">只选未注册</button>
+                                            <button type="button" class="btn btn-ghost btn-sm" id="outlook-deselect-all-btn" onclick="deselectAllOutlookAccounts()">取消全选</button>
                                         </div>
                                     </div>
                                     <div class="form-group">
