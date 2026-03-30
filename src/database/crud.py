@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, asc, func
 
-from .models import Account, EmailService, RegistrationTask, Setting, Proxy, CpaService, Sub2ApiService
+from .models import Account, EmailService, RegistrationTask, BatchJob, Setting, Proxy, CpaService, Sub2ApiService
 
 
 # ============================================================================
@@ -245,13 +245,17 @@ def create_registration_task(
     db: Session,
     task_uuid: str,
     email_service_id: Optional[int] = None,
-    proxy: Optional[str] = None
+    proxy: Optional[str] = None,
+    task_type: str = "openai_register",
+    batch_id: Optional[str] = None,
 ) -> RegistrationTask:
     """创建注册任务"""
     db_task = RegistrationTask(
         task_uuid=task_uuid,
         email_service_id=email_service_id,
         proxy=proxy,
+        task_type=task_type,
+        batch_id=batch_id,
         status='pending'
     )
     db.add(db_task)
@@ -322,6 +326,67 @@ def delete_registration_task(db: Session, task_uuid: str) -> bool:
         return False
 
     db.delete(db_task)
+    db.commit()
+    return True
+
+
+# ============================================================================
+# 批量作业 CRUD
+# ============================================================================
+
+def create_batch_job(
+    db: Session,
+    batch_id: str,
+    job_type: str,
+    config: Optional[Dict[str, Any]] = None,
+    total: int = 0,
+    status: str = "pending",
+) -> BatchJob:
+    """创建批量作业"""
+    db_job = BatchJob(
+        batch_id=batch_id,
+        job_type=job_type,
+        config=config or {},
+        total=total,
+        status=status,
+    )
+    db.add(db_job)
+    db.commit()
+    db.refresh(db_job)
+    return db_job
+
+
+def get_batch_job_by_id(db: Session, batch_id: str) -> Optional[BatchJob]:
+    """根据 batch_id 获取批量作业"""
+    return db.query(BatchJob).filter(BatchJob.batch_id == batch_id).first()
+
+
+def update_batch_job(db: Session, batch_id: str, **kwargs) -> Optional[BatchJob]:
+    """更新批量作业"""
+    db_job = get_batch_job_by_id(db, batch_id)
+    if not db_job:
+        return None
+
+    for key, value in kwargs.items():
+        if hasattr(db_job, key):
+            setattr(db_job, key, value)
+
+    db.commit()
+    db.refresh(db_job)
+    return db_job
+
+
+def append_batch_job_log(db: Session, batch_id: str, log_message: str) -> bool:
+    """追加批量作业日志"""
+    db_job = get_batch_job_by_id(db, batch_id)
+    if not db_job:
+        return False
+
+    if db_job.logs:
+        db_job.logs += f"\n{log_message}"
+    else:
+        db_job.logs = log_message
+
     db.commit()
     return True
 

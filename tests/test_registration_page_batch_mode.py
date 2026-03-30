@@ -77,6 +77,15 @@ def run_app_js_scenario(scenario_js: str) -> None:
           'outlook-interval-max', 'outlook-skip-registered',
           'outlook-concurrency-mode', 'outlook-concurrency-count',
           'outlook-concurrency-hint', 'outlook-interval-group',
+          'outlook-register-section', 'outlook-register-count',
+          'outlook-register-backend', 'outlook-register-browser-path',
+          'outlook-register-bot-wait', 'outlook-register-captcha-retries',
+          'outlook-register-concurrency-mode', 'outlook-register-concurrency-count',
+          'outlook-register-concurrency-hint', 'outlook-register-interval-group',
+          'outlook-register-interval-min', 'outlook-register-interval-max',
+          'outlook-register-persist-service', 'outlook-register-enable-oauth2',
+          'outlook-register-oauth-group', 'outlook-register-client-id',
+          'outlook-register-redirect-url', 'outlook-register-scopes',
           'concurrency-mode', 'concurrency-count', 'concurrency-hint',
           'interval-group', 'auto-upload-cpa', 'cpa-service-select-group',
           'cpa-service-select', 'auto-upload-sub2api',
@@ -97,6 +106,15 @@ def run_app_js_scenario(scenario_js: str) -> None:
         elements['outlook-interval-max'].value = '30';
         elements['outlook-concurrency-mode'].value = 'pipeline';
         elements['outlook-concurrency-count'].value = '3';
+        elements['outlook-register-count'].value = '3';
+        elements['outlook-register-backend'].value = 'auto';
+        elements['outlook-register-bot-wait'].value = '12';
+        elements['outlook-register-captcha-retries'].value = '2';
+        elements['outlook-register-concurrency-mode'].value = 'pipeline';
+        elements['outlook-register-concurrency-count'].value = '2';
+        elements['outlook-register-interval-min'].value = '5';
+        elements['outlook-register-interval-max'].value = '30';
+        elements['outlook-register-persist-service'].checked = true;
 
         const documentListeners = {{}};
         const testState = {{
@@ -162,6 +180,9 @@ def run_app_js_scenario(scenario_js: str) -> None:
             if (path === '/registration/batch/batch-1') {{
               return {{ total: 7, completed: 0, success: 0, failed: 0, cancelled: false, finished: false }};
             }}
+            if (path === '/registration/jobs/batch/job-batch-1') {{
+              return {{ job_type: 'outlook_register', total: 3, completed: 0, success: 0, failed: 0, cancelled: false, finished: false, logs: [] }};
+            }}
             return [];
           }},
           async post(path) {{
@@ -178,6 +199,9 @@ def run_app_js_scenario(scenario_js: str) -> None:
             }}
             if (path === '/registration/outlook-batch') {{
               return {{ batch_id: 'outlook-batch-1', total: 2, skipped: 0, to_register: 2, service_ids: [1, 2] }};
+            }}
+            if (path === '/registration/jobs/batch') {{
+              return {{ batch_id: 'job-batch-1', job_type: 'outlook_register', count: 3, tasks: [] }};
             }}
             return {{}};
           }}
@@ -383,6 +407,23 @@ def test_registration_page_batch_cancel_rest_keeps_controls_locked_until_termina
         }
         if (!__elements['start-btn'].disabled || !__elements['cancel-btn'].disabled || !__elements['email-service'].disabled) {
           throw new Error('expected controls to remain locked while cancellation is still pending');
+        }
+        """
+    )
+
+
+def test_registration_page_outlook_register_submits_generic_job_batch_request():
+    run_app_js_scenario(
+        """
+        await globalThis.__run_dom_content_loaded();
+        __elements['email-service'].value = 'outlook_register:job';
+
+        await __test_exports.handleStartRegistration({
+          preventDefault() {}
+        });
+
+        if (__test_state.postedPaths[0] !== '/registration/jobs/batch') {
+          throw new Error(`expected first request to /registration/jobs/batch, got ${__test_state.postedPaths[0]}`);
         }
         """
     )

@@ -249,3 +249,75 @@ def test_sync_registration_task_uses_bound_email_service_id(monkeypatch):
     assert captured["task_uuid"] == "task-bound-service"
     assert captured["service_type"] == EmailServiceType.OUTLOOK
     assert captured["config"]["email"] == "selected@example.com"
+
+
+def test_outlook_register_job_persists_created_account_as_email_service(monkeypatch):
+    manager = _build_manager("outlook_register_job.db")
+    fake_get_db = _build_get_db(manager)
+
+    with manager.session_scope() as session:
+        session.add(
+            RegistrationTask(
+                task_uuid="task-outlook-create",
+                status="pending",
+                task_type="outlook_register",
+            )
+        )
+
+    class _FakeResult:
+        def __init__(self):
+            self.success = True
+            self.email = "created@example.com"
+            self.password = "Secret123!"
+            self.refresh_token = "refresh-token"
+            self.access_token = "access-token"
+            self.expires_at = None
+            self.error_message = ""
+            self.metadata = {}
+
+        def to_dict(self):
+            return {
+                "success": True,
+                "email": self.email,
+                "password": self.password,
+                "refresh_token": "refresh-token...",
+                "access_token": "access-token...",
+                "expires_at": None,
+                "error_message": "",
+                "metadata": {},
+            }
+
+    class _FakeRunner:
+        def __init__(self, config=None, proxy_url=None, callback_logger=None):
+            self.config = config or {}
+
+        def run(self):
+            return _FakeResult()
+
+    monkeypatch.setattr(registration_routes, "get_db", fake_get_db)
+    monkeypatch.setattr(registration_routes, "OutlookBrowserRegistrationRunner", _FakeRunner)
+    monkeypatch.setattr(registration_routes, "get_proxy_for_registration", lambda db: (None, None))
+
+    result = registration_routes._run_sync_job_task(
+        task_uuid="task-outlook-create",
+        task_type="outlook_register",
+        proxy=None,
+        job_config={
+            "persist_as_email_service": True,
+            "client_id": "client-id",
+            "redirect_url": "http://localhost:8000",
+            "scopes": ["offline_access"],
+        },
+    )
+
+    assert result.success is True
+
+    with manager.session_scope() as session:
+        task = session.query(RegistrationTask).filter_by(task_uuid="task-outlook-create").first()
+        service = session.query(EmailService).filter_by(name="created@example.com", service_type="outlook").first()
+
+        assert task is not None
+        assert task.status == "completed"
+        assert service is not None
+        assert service.config["email"] == "created@example.com"
+        assert service.config["password"] == "Secret123!"

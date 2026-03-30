@@ -29,6 +29,12 @@ class TaskStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class BatchJobType(str, Enum):
+    """批量作业类型"""
+    OPENAI_REGISTER = "openai_register"
+    OUTLOOK_REGISTER = "outlook_register"
+
+
 class EmailServiceType(str, Enum):
     """邮箱服务类型"""
     TEMPMAIL = "tempmail"
@@ -149,6 +155,23 @@ EMAIL_SERVICE_DEFAULTS = {
         "timeout": 30,
         "max_retries": 3,
     }
+}
+
+OUTLOOK_REGISTER_DEFAULTS = {
+    "browser_backend": "auto",
+    "browser_path": "",
+    "bot_protection_wait_seconds": 12,
+    "max_captcha_retries": 2,
+    "enable_oauth2": False,
+    "client_id": "",
+    "redirect_url": "",
+    "scopes": [
+        "offline_access",
+        "https://graph.microsoft.com/Mail.ReadWrite",
+        "https://graph.microsoft.com/Mail.Send",
+        "https://graph.microsoft.com/User.Read",
+    ],
+    "persist_as_email_service": True,
 }
 
 # ============================================================================

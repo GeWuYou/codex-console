@@ -26,6 +26,10 @@ dev = [
 payment = [
     "playwright>=1.40.0",
 ]
+browser = [
+    "playwright>=1.40.0",
+    "patchright>=1.52.5",
+]
 
 [project.scripts]
 codex-console = "webui:main"

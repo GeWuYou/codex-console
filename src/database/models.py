@@ -106,6 +106,8 @@ class RegistrationTask(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     task_uuid = Column(String(36), unique=True, nullable=False, index=True)  # 任务唯一标识
     status = Column(String(20), default='pending')  # 'pending', 'running', 'completed', 'failed', 'cancelled'
+    task_type = Column(String(50), default='openai_register', index=True)  # openai_register / outlook_register
+    batch_id = Column(String(36), index=True)  # 所属批量作业 ID
     email_service_id = Column(Integer, ForeignKey('email_services.id'), index=True)  # 使用的邮箱服务
     proxy = Column(String(255))  # 使用的代理
     logs = Column(Text)  # 注册过程日志
@@ -117,6 +119,29 @@ class RegistrationTask(Base):
 
     # 关系
     email_service = relationship('EmailService')
+
+
+class BatchJob(Base):
+    """批量作业表"""
+    __tablename__ = 'batch_jobs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    batch_id = Column(String(36), unique=True, nullable=False, index=True)
+    job_type = Column(String(50), nullable=False, index=True)
+    status = Column(String(20), default='pending')
+    config = Column(JSONEncodedDict)
+    total = Column(Integer, default=0)
+    completed = Column(Integer, default=0)
+    success = Column(Integer, default=0)
+    failed = Column(Integer, default=0)
+    skipped = Column(Integer, default=0)
+    current_index = Column(Integer, default=0)
+    logs = Column(Text)
+    error_message = Column(Text)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class Setting(Base):

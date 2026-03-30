@@ -112,6 +112,8 @@ class DatabaseSessionManager:
             ("accounts", "cookies", "TEXT"),
             ("proxies", "is_default", "BOOLEAN DEFAULT 0"),
             ("sub2api_services", "default_remote_proxy_id", "INTEGER"),
+            ("registration_tasks", "task_type", "VARCHAR(50) DEFAULT 'openai_register'"),
+            ("registration_tasks", "batch_id", "VARCHAR(36)"),
         ]
 
         # 确保新表存在（create_tables 已处理，此处兜底）

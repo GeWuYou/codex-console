@@ -184,6 +184,7 @@
                                         <option value="duck_mail">DuckMail</option>
                                         <option value="imap_mail">IMAP 邮箱</option>
                                         <option value="outlook_batch:all">Outlook 批量注册</option>
+                                        <option value="outlook_register:job">Outlook 账号批量创建</option>
                                     </select>
                                 </div>
 
@@ -229,6 +230,81 @@
                                             <input type="checkbox" id="outlook-skip-registered" checked>
                                             <span>自动跳过已注册的邮箱</span>
                                         </label>
+                                    </div>
+                                </div>
+
+                                <div id="outlook-register-section" style="display: none;">
+                                    <div class="form-group">
+                                        <label for="outlook-register-count">创建数量 (1-100)</label>
+                                        <input type="number" id="outlook-register-count" min="1" max="100" value="3">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="outlook-register-backend">浏览器后端</label>
+                                        <select id="outlook-register-backend">
+                                            <option value="auto">自动选择</option>
+                                            <option value="patchright">Patchright</option>
+                                            <option value="playwright">Playwright</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="outlook-register-browser-path">浏览器路径（Playwright 可选）</label>
+                                        <input type="text" id="outlook-register-browser-path" placeholder="例如 C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="outlook-register-bot-wait">Bot Protection Wait (秒)</label>
+                                        <input type="number" id="outlook-register-bot-wait" min="0" max="120" value="12">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="outlook-register-captcha-retries">验证码最大重试次数</label>
+                                        <input type="number" id="outlook-register-captcha-retries" min="0" max="10" value="2">
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="outlook-register-concurrency-mode">并发模式</label>
+                                        <select id="outlook-register-concurrency-mode">
+                                            <option value="pipeline">流水线（Pipeline）</option>
+                                            <option value="parallel">并行（Parallel）</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="outlook-register-concurrency-count">并发数 (1-50)</label>
+                                        <input type="number" id="outlook-register-concurrency-count" min="1" max="50" value="2">
+                                        <small id="outlook-register-concurrency-hint" style="color: var(--text-muted); font-size: 0.75rem;">同时最多运行 N 个创建任务，每隔 interval 秒启动新任务</small>
+                                    </div>
+                                    <div id="outlook-register-interval-group">
+                                        <div class="form-group">
+                                            <label for="outlook-register-interval-min">最小间隔 (秒)</label>
+                                            <input type="number" id="outlook-register-interval-min" min="0" max="300" value="5">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="outlook-register-interval-max">最大间隔 (秒)</label>
+                                            <input type="number" id="outlook-register-interval-max" min="1" max="600" value="30">
+                                        </div>
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+                                            <input type="checkbox" id="outlook-register-persist-service" checked>
+                                            <span>成功后写入邮箱服务列表</span>
+                                        </label>
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer;">
+                                            <input type="checkbox" id="outlook-register-enable-oauth2">
+                                            <span>注册后立即获取 OAuth2 token</span>
+                                        </label>
+                                    </div>
+                                    <div id="outlook-register-oauth-group" style="display: none;">
+                                        <div class="form-group">
+                                            <label for="outlook-register-client-id">Client ID</label>
+                                            <input type="text" id="outlook-register-client-id" placeholder="Azure App Client ID">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="outlook-register-redirect-url">Redirect URL</label>
+                                            <input type="text" id="outlook-register-redirect-url" placeholder="http://localhost:8000">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="outlook-register-scopes">Scopes（每行一个，留空使用默认值）</label>
+                                            <textarea id="outlook-register-scopes" rows="4" placeholder="offline_access&#10;https://graph.microsoft.com/Mail.ReadWrite&#10;https://graph.microsoft.com/Mail.Send&#10;https://graph.microsoft.com/User.Read"></textarea>
+                                        </div>
                                     </div>
                                 </div>
 
