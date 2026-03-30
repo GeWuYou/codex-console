@@ -1051,7 +1051,7 @@ def _build_inbox_config(db, service_type, email: str) -> dict:
 
 @router.post("/{account_id}/inbox-code")
 async def get_account_inbox_code(account_id: int):
-    """查询账号邮箱收件箱最新验证码"""
+    """查询账号邮箱最新验证码（收件箱和垃圾箱）"""
     from ...services import EmailServiceFactory, EmailServiceType
 
     with get_db() as db:
@@ -1079,6 +1079,6 @@ async def get_account_inbox_code(account_id: int):
             return {"success": False, "error": str(e)}
 
         if not code:
-            return {"success": False, "error": "未收到验证码邮件"}
+            return {"success": False, "error": "未在收件箱或垃圾箱中收到验证码邮件"}
 
         return {"success": True, "code": code, "email": account.email}

@@ -142,6 +142,33 @@ class EmailParser:
         Returns:
             验证码字符串，如果未找到返回 None
         """
+        match = self.find_verification_match_in_emails(
+            emails,
+            target_email=target_email,
+            min_timestamp=min_timestamp,
+            used_codes=used_codes,
+        )
+        return match["code"] if match else None
+
+    def find_verification_match_in_emails(
+        self,
+        emails: List[EmailMessage],
+        target_email: Optional[str] = None,
+        min_timestamp: int = 0,
+        used_codes: Optional[set] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        从邮件列表中查找验证码和对应邮件
+
+        Args:
+            emails: 邮件列表
+            target_email: 目标邮箱地址
+            min_timestamp: 最小时间戳（用于过滤旧邮件）
+            used_codes: 已使用的验证码集合（用于去重）
+
+        Returns:
+            包含验证码和邮件对象的字典，如果未找到返回 None
+        """
         used_codes = used_codes or set()
 
         for email in emails:
@@ -167,7 +194,7 @@ class EmailParser:
                     f"[{target_email or 'unknown'}] 找到验证码: {code}, "
                     f"邮件主题: {email.subject[:30]}"
                 )
-                return code
+                return {"code": code, "email": email}
 
         return None
 

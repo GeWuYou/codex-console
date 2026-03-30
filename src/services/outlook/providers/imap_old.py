@@ -6,6 +6,7 @@
 import email
 import imaplib
 import logging
+from copy import copy
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from typing import List, Optional
@@ -147,6 +148,7 @@ class IMAPOldProvider(OutlookProvider):
         self,
         count: int = 20,
         only_unseen: bool = True,
+        folders: Optional[List[str]] = None,
     ) -> List[EmailMessage]:
         """
         获取最近的邮件
@@ -154,6 +156,7 @@ class IMAPOldProvider(OutlookProvider):
         Args:
             count: 获取数量
             only_unseen: 是否只获取未读
+            folders: 要查询的文件夹列表
 
         Returns:
             邮件列表
@@ -163,28 +166,43 @@ class IMAPOldProvider(OutlookProvider):
                 return []
 
         try:
-            # 选择收件箱
-            self._conn.select("INBOX", readonly=True)
-
-            # 搜索邮件
             flag = "UNSEEN" if only_unseen else "ALL"
-            status, data = self._conn.search(None, flag)
-
-            if status != "OK" or not data or not data[0]:
-                return []
-
-            # 获取最新的邮件 ID
-            ids = data[0].split()
-            recent_ids = ids[-count:][::-1]  # 倒序，最新的在前
-
             emails = []
-            for msg_id in recent_ids:
+            seen_message_ids = set()
+            folders = folders or ["INBOX"]
+
+            for folder in folders:
                 try:
-                    email_msg = self._fetch_email(msg_id)
-                    if email_msg:
-                        emails.append(email_msg)
+                    status, _ = self._conn.select(folder, readonly=True)
+                    if status != "OK":
+                        logger.debug(f"[{self.account.email}] 无法选择 IMAP 文件夹: {folder}")
+                        continue
+
+                    status, data = self._conn.search(None, flag)
+                    if status != "OK" or not data or not data[0]:
+                        continue
+
+                    ids = data[0].split()
+                    recent_ids = ids[-count:][::-1]  # 倒序，最新的在前
+
+                    for msg_id in recent_ids:
+                        try:
+                            email_msg = self._fetch_email(msg_id, folder)
+                            if not email_msg:
+                                continue
+
+                            dedupe_key = email_msg.id or f"{folder}:{msg_id.decode(errors='ignore')}"
+                            if dedupe_key in seen_message_ids:
+                                continue
+
+                            seen_message_ids.add(dedupe_key)
+                            emails.append(email_msg)
+                        except Exception as e:
+                            logger.warning(
+                                f"[{self.account.email}] 解析邮件失败 (文件夹: {folder}, ID: {msg_id}): {e}"
+                            )
                 except Exception as e:
-                    logger.warning(f"[{self.account.email}] 解析邮件失败 (ID: {msg_id}): {e}")
+                    logger.warning(f"[{self.account.email}] 读取 IMAP 文件夹失败 ({folder}): {e}")
 
             return emails
 
@@ -193,7 +211,7 @@ class IMAPOldProvider(OutlookProvider):
             logger.error(f"[{self.account.email}] 获取邮件失败: {e}")
             return []
 
-    def _fetch_email(self, msg_id: bytes) -> Optional[EmailMessage]:
+    def _fetch_email(self, msg_id: bytes, folder: str = "INBOX") -> Optional[EmailMessage]:
         """
         获取并解析单封邮件
 
@@ -217,7 +235,13 @@ class IMAPOldProvider(OutlookProvider):
         if not raw:
             return None
 
-        return self._parse_email(raw)
+        email_msg = self._parse_email(raw)
+        if not email_msg:
+            return None
+
+        email_msg = copy(email_msg)
+        email_msg.folder = folder
+        return email_msg
 
     @staticmethod
     def _parse_email(raw: bytes) -> EmailMessage:

@@ -343,7 +343,7 @@ function renderAccounts(accounts) {
                             <a href="#" class="dropdown-item" onclick="event.preventDefault();closeMoreMenu(this);refreshToken(${account.id})">刷新</a>
                             <a href="#" class="dropdown-item" onclick="event.preventDefault();closeMoreMenu(this);uploadAccount(${account.id})">上传</a>
                             <a href="#" class="dropdown-item" onclick="event.preventDefault();closeMoreMenu(this);markSubscription(${account.id})">标记</a>
-                            <a href="#" class="dropdown-item" onclick="event.preventDefault();closeMoreMenu(this);checkInboxCode(${account.id})">收件箱</a>
+                            <a href="#" class="dropdown-item" onclick="event.preventDefault();closeMoreMenu(this);checkInboxCode(${account.id})">邮箱验证码</a>
                         </div>
                     </div>
                     <button class="btn btn-danger btn-sm" onclick="deleteAccount(${account.id}, '${escapeHtml(account.email)}')">删除</button>
@@ -1438,7 +1438,7 @@ async function saveCookies(id) {
 
 // 查询收件箱验证码
 async function checkInboxCode(id) {
-    toast.info('正在查询收件箱...');
+    toast.info('正在查询邮箱验证码...');
     try {
         const result = await api.post(`/accounts/${id}/inbox-code`);
         if (result.success) {
@@ -1455,7 +1455,7 @@ function showInboxCodeResult(code, email) {
     elements.modalBody.innerHTML = `
         <div style="text-align:center; padding:24px 16px;">
             <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
-                ${escapeHtml(email)} 最新验证码
+                ${escapeHtml(email)} 最新邮箱验证码
             </div>
             <div style="font-size:36px;font-weight:700;letter-spacing:8px;
                         color:var(--primary);font-family:monospace;margin-bottom:20px;">

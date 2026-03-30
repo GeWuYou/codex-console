@@ -248,6 +248,8 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                 logger.error(f"任务不存在: {task_uuid}")
                 return
 
+            bound_email_service_id = email_service_id or task.email_service_id
+
             # 更新 TaskManager 状态
             task_manager.update_status(task_uuid, "running")
 
@@ -270,10 +272,10 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
             settings = get_settings()
 
             # 优先使用数据库中配置的邮箱服务
-            if email_service_id:
+            if bound_email_service_id:
                 from ...database.models import EmailService as EmailServiceModel
                 db_service = db.query(EmailServiceModel).filter(
-                    EmailServiceModel.id == email_service_id,
+                    EmailServiceModel.id == bound_email_service_id,
                     EmailServiceModel.enabled == True
                 ).first()
 
@@ -284,7 +286,7 @@ def _run_sync_registration_task(task_uuid: str, email_service_type: str, proxy: 
                     crud.update_registration_task(db, task_uuid, email_service_id=db_service.id)
                     logger.info(f"使用数据库邮箱服务: {db_service.name} (ID: {db_service.id}, 类型: {service_type.value})")
                 else:
-                    raise ValueError(f"邮箱服务不存在或已禁用: {email_service_id}")
+                    raise ValueError(f"邮箱服务不存在或已禁用: {bound_email_service_id}")
             else:
                 # 使用默认配置或传入的配置
                 if service_type == EmailServiceType.TEMPMAIL:
@@ -1464,14 +1466,20 @@ async def start_outlook_batch_registration(
     if request.mode not in ("parallel", "pipeline"):
         raise HTTPException(status_code=400, detail="模式必须为 parallel 或 pipeline")
 
+    # 保留勾选顺序并去重，避免同一 Outlook 账号被重复提交
+    requested_service_ids = list(dict.fromkeys(request.service_ids))
+    duplicate_count = len(request.service_ids) - len(requested_service_ids)
+    if duplicate_count > 0:
+        logger.info(f"Outlook 批量注册已去重，移除重复 service_id {duplicate_count} 个")
+
     # 过滤掉已注册的邮箱
-    actual_service_ids = request.service_ids
+    actual_service_ids = requested_service_ids
     skipped_count = 0
 
     if request.skip_registered:
         actual_service_ids = []
         with get_db() as db:
-            for service_id in request.service_ids:
+            for service_id in requested_service_ids:
                 service = db.query(EmailServiceModel).filter(
                     EmailServiceModel.id == service_id
                 ).first()
@@ -1495,7 +1503,7 @@ async def start_outlook_batch_registration(
     if not actual_service_ids:
         return OutlookBatchRegistrationResponse(
             batch_id="",
-            total=len(request.service_ids),
+            total=len(requested_service_ids),
             skipped=skipped_count,
             to_register=0,
             service_ids=[]
@@ -1539,7 +1547,7 @@ async def start_outlook_batch_registration(
 
     return OutlookBatchRegistrationResponse(
         batch_id=batch_id,
-        total=len(request.service_ids),
+        total=len(requested_service_ids),
         skipped=skipped_count,
         to_register=len(actual_service_ids),
         service_ids=actual_service_ids

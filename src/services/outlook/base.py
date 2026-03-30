@@ -45,6 +45,7 @@ class EmailMessage:
     recipients: List[str] = field(default_factory=list)  # 收件人列表
     body: str = ""                             # 正文内容
     body_preview: str = ""                     # 正文预览
+    folder: str = ""                           # 来源文件夹
     received_at: Optional[datetime] = None     # 接收时间
     received_timestamp: int = 0                # 接收时间戳
     is_read: bool = False                      # 是否已读
@@ -60,6 +61,7 @@ class EmailMessage:
             "recipients": self.recipients,
             "body": self.body,
             "body_preview": self.body_preview,
+            "folder": self.folder,
             "received_at": self.received_at.isoformat() if self.received_at else None,
             "received_timestamp": self.received_timestamp,
             "is_read": self.is_read,

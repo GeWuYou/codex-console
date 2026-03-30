@@ -24,6 +24,15 @@ from .providers.graph_api import GraphAPIProvider
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_OUTLOOK_SEARCH_FOLDERS = [
+    "INBOX",
+    "Junk",
+    "Junk E-mail",
+    "Spam",
+]
+JUNK_FOLDER_NAMES = {"JUNK", "JUNK E-MAIL", "SPAM", "JUNKEMAIL"}
+
+
 # 默认提供者优先级
 # IMAP_OLD 最兼容（只需 login.live.com token），IMAP_NEW 次之，Graph API 最后
 # 原因：部分 client_id 没有 Graph API 权限，但有 IMAP 权限
@@ -205,6 +214,7 @@ class OutlookService(BaseEmailService):
         account: OutlookAccount,
         count: int = 20,
         only_unseen: bool = True,
+        folders: Optional[List[str]] = None,
     ) -> List[EmailMessage]:
         """
         尝试多个提供者获取邮件
@@ -213,6 +223,7 @@ class OutlookService(BaseEmailService):
             account: Outlook 账户
             count: 获取数量
             only_unseen: 是否只获取未读
+            folders: 要查询的文件夹列表
 
         Returns:
             邮件列表
@@ -236,7 +247,11 @@ class OutlookService(BaseEmailService):
 
                 with self._imap_semaphore:
                     with provider:
-                        emails = provider.get_recent_emails(count, only_unseen)
+                        emails = provider.get_recent_emails(
+                            count,
+                            only_unseen,
+                            folders=folders,
+                        )
 
                         if emails:
                             # 成功获取邮件
@@ -343,6 +358,7 @@ class OutlookService(BaseEmailService):
 
         start_time = time.time()
         poll_count = 0
+        folders = list(DEFAULT_OUTLOOK_SEARCH_FOLDERS)
 
         while time.time() - start_time < actual_timeout:
             poll_count += 1
@@ -356,28 +372,40 @@ class OutlookService(BaseEmailService):
                     account,
                     count=15,
                     only_unseen=only_unseen,
+                    folders=folders,
                 )
 
                 if emails:
+                    emails = sorted(
+                        emails,
+                        key=lambda item: item.received_timestamp or 0,
+                        reverse=True,
+                    )
                     logger.debug(
                         f"[{email}] 第 {poll_count} 次轮询获取到 {len(emails)} 封邮件"
                     )
 
                     # 从邮件中查找验证码
-                    code = self.email_parser.find_verification_code_in_emails(
+                    match = self.email_parser.find_verification_match_in_emails(
                         emails,
                         target_email=email,
                         min_timestamp=min_timestamp,
                         used_codes=used_codes,
                     )
 
-                    if code:
+                    if match:
+                        code = match["code"]
+                        matched_email = match["email"]
                         used_codes.add(code)
                         elapsed = int(time.time() - start_time)
+                        folder_name = (matched_email.folder or "unknown").strip()
+                        folder_key = folder_name.upper()
                         logger.info(
                             f"[{email}] 找到验证码: {code}，"
-                            f"总耗时 {elapsed}s，轮询 {poll_count} 次"
+                            f"来源文件夹: {folder_name}，总耗时 {elapsed}s，轮询 {poll_count} 次"
                         )
+                        if folder_key in JUNK_FOLDER_NAMES:
+                            logger.warning(f"[{email}] 验证码命中垃圾箱文件夹: {folder_name}")
                         self.update_status(True)
                         return code
 

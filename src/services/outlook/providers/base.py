@@ -98,6 +98,7 @@ class OutlookProvider(abc.ABC):
         self,
         count: int = 20,
         only_unseen: bool = True,
+        folders: Optional[List[str]] = None,
     ) -> List[EmailMessage]:
         """
         获取最近的邮件
@@ -105,6 +106,7 @@ class OutlookProvider(abc.ABC):
         Args:
             count: 获取数量
             only_unseen: 是否只获取未读
+            folders: 要查询的文件夹列表；为空时使用提供者默认文件夹
 
         Returns:
             邮件列表
