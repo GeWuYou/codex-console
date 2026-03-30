@@ -7,6 +7,7 @@ WORKDIR /app
 # 设置环境变量
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     # WebUI 默认配置
     WEBUI_HOST=0.0.0.0 \
     WEBUI_PORT=1455 \
@@ -19,12 +20,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         gcc \
         python3-dev \
+        curl \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制依赖文件并安装
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir playwright patchright \
+    && python -m playwright install --with-deps chromium \
+    && (patchright install chromium || python -m patchright install chromium)
 
 # 复制项目代码
 COPY . .

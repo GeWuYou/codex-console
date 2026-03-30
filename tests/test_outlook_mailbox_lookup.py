@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import importlib.util
 from pathlib import Path
 import sys
 import types
@@ -30,6 +31,7 @@ from src.services.outlook.providers.graph_api import GraphAPIProvider
 from src.services.outlook.providers.imap_old import IMAPOldProvider
 from src.services.outlook.providers.base import ProviderConfig
 from src.services.outlook.service import OutlookService
+from src.core.outlook_register.runner import OutlookBrowserRegistrationRunner
 from src.web.routes import registration as registration_routes
 
 
@@ -321,3 +323,23 @@ def test_outlook_register_job_persists_created_account_as_email_service(monkeypa
         assert service is not None
         assert service.config["email"] == "created@example.com"
         assert service.config["password"] == "Secret123!"
+
+
+def test_outlook_register_runner_reports_missing_browser_dependencies(monkeypatch):
+    original_find_spec = importlib.util.find_spec
+
+    def fake_find_spec(name, package=None):
+        if name in {"patchright", "playwright"}:
+            return None
+        return original_find_spec(name, package)
+
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+
+    runner = OutlookBrowserRegistrationRunner({"browser_backend": "auto"})
+
+    try:
+        runner._start_playwright()
+    except RuntimeError as exc:
+        assert "未安装浏览器自动化依赖" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError for missing browser dependencies")

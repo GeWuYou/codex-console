@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import importlib.util
 import json
 import logging
 import random
@@ -137,8 +138,14 @@ class OutlookBrowserRegistrationRunner:
 
         browser_path = self.config.get("browser_path") or None
         last_error = None
+        missing_backends: List[str] = []
 
         for backend in candidates:
+            module_name = "patchright" if backend == "patchright" else "playwright"
+            if importlib.util.find_spec(module_name) is None:
+                missing_backends.append(backend)
+                logger.warning("跳过 %s: 依赖未安装", backend)
+                continue
             try:
                 if backend == "patchright":
                     from patchright.sync_api import sync_playwright  # type: ignore
@@ -161,6 +168,18 @@ class OutlookBrowserRegistrationRunner:
             except Exception as exc:  # pragma: no cover - 依赖环境差异大
                 last_error = exc
                 logger.warning("启动 %s 失败: %s", backend, exc)
+
+        if len(missing_backends) == len(candidates):
+            if requested_backend == "auto":
+                raise RuntimeError(
+                    "未安装浏览器自动化依赖。请先安装 playwright 或 patchright；"
+                    "若使用 Playwright，还需要执行 playwright install chromium"
+                )
+            if requested_backend == "playwright":
+                raise RuntimeError(
+                    "未安装 playwright。请先安装 playwright，并执行 playwright install chromium"
+                )
+            raise RuntimeError("未安装 patchright。请先安装 patchright，或把浏览器后端切换为 playwright/auto")
 
         raise RuntimeError(f"启动浏览器失败: {last_error}")
 

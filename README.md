@@ -136,6 +136,14 @@ docker-compose up -d --build
 
 你可以在 `docker-compose.yml` 中修改环境变量，比如端口和访问密码。
 
+当前 Docker 镜像会在构建阶段直接安装：
+
+- `playwright`
+- `patchright`
+- Chromium 浏览器及其运行依赖
+
+也就是说，容器启动后默认就能跑 Outlook 浏览器注册，不需要再进容器手动补装。
+
 ### 使用 docker run
 
 ```bash
@@ -162,6 +170,8 @@ docker run -d \
 注意:
 
 镜像里默认执行的是 `python webui.py`，并通过 `WEBUI_*` 环境变量把容器端口固定在 `1455`。
+
+由于镜像现在会预装浏览器自动化依赖，首次 `docker build` 体积和耗时都会比纯 API 模式更大，这是预期行为。
 
 `-v $(pwd)/data:/app/data` 很重要，这会把数据库和账号数据持久化到宿主机。否则容器一重启，数据也可能跟着表演消失术。
 
